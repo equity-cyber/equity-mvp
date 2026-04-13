@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { MOCK_PROFILES, MockProfile, FounderType } from '../data/mockProfiles'
 import { ProfileCard } from '../components/ProfileCard'
 import { ProfileDetail } from '../components/ProfileDetail'
+import { calculateMatchScore } from '../lib/matchScore'
 
 type Filter = 'Todos' | FounderType
 const FILTERS: Filter[] = ['Todos', 'Hacker', 'Hustler', 'Money', 'Legal']
@@ -15,10 +16,21 @@ const TYPE_TAG_STYLES: Record<FounderType, string> = {
   Legal:   'bg-rose-100 text-rose-700',
 }
 
+interface MyProfile {
+  founder_type: FounderType
+  full_name: string
+  bio: string
+  skills: { label: string; cat: string }[]
+  seeking: string[]
+  location?: string
+}
+
 interface Props {
   myProfileId: string | null
   myFounderType: FounderType | null
   onSignOut?: () => void
+  onOpenConnections: () => void
+  onOpenMyProfile: () => void
 }
 
 function toMockProfile(row: any): MockProfile {
@@ -37,12 +49,12 @@ function toMockProfile(row: any): MockProfile {
     top_pow: 'Perfil nuevo',
     top_pow_metric: 'Pendiente de verificación',
     top_pow_source: 'doc',
-    score_hhm: 70,
-    score_skills: 60,
-    score_vision: 65,
+    score_hhm: 0,
+    score_skills: 0,
+    score_vision: 0,
     skills: Array.isArray(row.skills) ? row.skills : [],
     seeking: Array.isArray(row.seeking) ? row.seeking : [],
-    ai_explain: 'Perfil recién creado. La IA todavía está calculando la compatibilidad completa.',
+    ai_explain: '',
     avatar_bg: founderType === 'Hacker' ? 'bg-blue-100'
       : founderType === 'Hustler' ? 'bg-emerald-100'
       : founderType === 'Money' ? 'bg-amber-100'
@@ -54,7 +66,7 @@ function toMockProfile(row: any): MockProfile {
   }
 }
 
-export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
+export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnections, onOpenMyProfile }: Props) {
   const { signOut } = useAuth()
   const [passed, setPassed] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<Filter>('Todos')
@@ -62,6 +74,55 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
   const [toast, setToast] = useState<string | null>(null)
   const [allProfiles, setAllProfiles] = useState<MockProfile[]>(MOCK_PROFILES)
   const [loadingProfiles, setLoadingProfiles] = useState(true)
+  const [myProfile, setMyProfile] = useState<MyProfile | null>(null)
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    if (!myProfileId) {
+      if (myFounderType) {
+        setMyProfile({
+          founder_type: myFounderType,
+          full_name: 'Tú',
+          bio: '',
+          skills: [],
+          seeking: [],
+          location: '',
+        })
+      }
+      return
+    }
+
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', myProfileId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setMyProfile({
+            founder_type: data.founder_type || myFounderType || 'Legal',
+            full_name: data.full_name || 'Tú',
+            bio: data.bio || '',
+            skills: Array.isArray(data.skills) ? data.skills : [],
+            seeking: Array.isArray(data.seeking) ? data.seeking : [],
+            location: data.location || '',
+          })
+        }
+      })
+  }, [myProfileId, myFounderType])
+
+  useEffect(() => {
+    if (!myProfileId) return
+
+    supabase
+      .from('connections')
+      .select('id')
+      .eq('to_profile_id', myProfileId)
+      .eq('status', 'pending')
+      .then(({ data }) => {
+        setPendingCount(data?.length || 0)
+      })
+  }, [myProfileId])
 
   useEffect(() => {
     const loadRealProfiles = async () => {
@@ -87,6 +148,33 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
   const visible = allProfiles.filter(p =>
     !passed.has(p.id) && (filter === 'Todos' || p.founder_type === filter)
   )
+
+  const matchResults = useMemo(() => {
+    const defaultProfile: MyProfile = {
+      founder_type: myFounderType || 'Legal',
+      full_name: 'Tú',
+      bio: '',
+      skills: [],
+      seeking: [],
+      location: 'Málaga',
+    }
+    const me = myProfile || defaultProfile
+
+    const results: Record<string, { score: number; explanation: string }> = {}
+    for (const p of allProfiles) {
+      const match = calculateMatchScore(me, p)
+      results[p.id] = { score: match.score, explanation: match.explanation }
+    }
+    return results
+  }, [allProfiles, myProfile, myFounderType])
+
+  const sortedVisible = useMemo(() => {
+    return [...visible].sort((a, b) => {
+      const scoreA = matchResults[a.id]?.score || 0
+      const scoreB = matchResults[b.id]?.score || 0
+      return scoreB - scoreA
+    })
+  }, [visible, matchResults])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -114,11 +202,26 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
             <h1 className="text-2xl font-black tracking-tighter text-zinc-900">equity</h1>
             <p className="text-xs text-zinc-500 -mt-1">matching para co-founders</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              IA activa
-            </div>
+          <div className="flex items-center gap-2">
+            {/* My Profile button */}
+            <button
+              onClick={onOpenMyProfile}
+              className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition-colors text-lg"
+            >
+              👤
+            </button>
+            {/* Connections button */}
+            <button
+              onClick={onOpenConnections}
+              className="relative w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition-colors text-lg"
+            >
+              💬
+              {pendingCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
             <button
               onClick={handleSignOut}
               className="text-sm text-zinc-400 hover:text-zinc-600 px-3 py-1 rounded-lg hover:bg-zinc-100 transition-colors"
@@ -162,7 +265,7 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
             <div className="w-8 h-8 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-3"/>
             <p className="text-zinc-400 text-sm">Cargando perfiles…</p>
           </div>
-        ) : visible.length === 0 ? (
+        ) : sortedVisible.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-zinc-400">Has visto todos los perfiles por ahora.</p>
             <button 
@@ -174,10 +277,12 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
           </div>
         ) : (
           <div className="space-y-5">
-            {visible.map(profile => (
+            {sortedVisible.map(profile => (
               <ProfileCard 
                 key={profile.id} 
-                profile={profile} 
+                profile={profile}
+                matchScore={matchResults[profile.id]?.score || 0}
+                matchExplanation={matchResults[profile.id]?.explanation || ''}
                 onOpen={setDetail} 
                 onPass={handlePass} 
               />
@@ -189,6 +294,7 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut }: Props) {
       <ProfileDetail 
         profile={detail} 
         myProfileId={myProfileId}
+        myProfile={myProfile}
         onClose={() => setDetail(null)} 
       />
 

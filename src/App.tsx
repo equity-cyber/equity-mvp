@@ -4,9 +4,12 @@ import { supabase } from './lib/supabase'
 import { LoginScreen } from './screens/LoginScreen'
 import { OnboardingScreen } from './screens/OnboardingScreen'
 import { FeedScreen } from './screens/FeedScreen'
+import { ConnectionsScreen } from './screens/ConnectionsScreen'
+import { ChatScreen } from './screens/ChatScreen'
+import { MyProfileScreen } from './screens/MyProfileScreen'
 import { FounderType } from './data/mockProfiles'
 
-type Screen = 'loading' | 'login' | 'onboarding' | 'feed'
+type Screen = 'loading' | 'login' | 'onboarding' | 'feed' | 'connections' | 'chat' | 'myprofile'
 
 export default function App() {
   const { user, loading } = useAuth()
@@ -14,6 +17,8 @@ export default function App() {
   const [guest, setGuest]   = useState(false)
   const [myProfileId, setMyProfileId] = useState<string | null>(null)
   const [myFounderType, setMyFounderType] = useState<FounderType | null>(null)
+  const [chatConnectionId, setChatConnectionId] = useState<string | null>(null)
+  const [chatOtherName, setChatOtherName] = useState<string>('')
 
   useEffect(() => {
     if (loading) return
@@ -62,11 +67,41 @@ export default function App() {
     />
   )
 
+  if (screen === 'myprofile') return (
+    <MyProfileScreen
+      myProfileId={myProfileId}
+      onBack={() => setScreen('feed')}
+    />
+  )
+
+  if (screen === 'connections') return (
+    <ConnectionsScreen
+      myProfileId={myProfileId}
+      onBack={() => setScreen('feed')}
+      onOpenChat={(connectionId, otherName) => {
+        setChatConnectionId(connectionId)
+        setChatOtherName(otherName)
+        setScreen('chat')
+      }}
+    />
+  )
+
+  if (screen === 'chat' && chatConnectionId) return (
+    <ChatScreen
+      connectionId={chatConnectionId}
+      myProfileId={myProfileId}
+      otherName={chatOtherName}
+      onBack={() => setScreen('connections')}
+    />
+  )
+
   return (
     <FeedScreen
       myProfileId={myProfileId}
       myFounderType={myFounderType}
       onSignOut={() => { setGuest(false); setMyProfileId(null); setMyFounderType(null); setScreen('login') }}
+      onOpenConnections={() => setScreen('connections')}
+      onOpenMyProfile={() => setScreen('myprofile')}
     />
   )
 }

@@ -8,10 +8,9 @@ const TYPE_COLORS = {
   Legal:   { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
 }
 
-function ScoreRing({ score }) {
+function ScoreRing({ score }: { score: number }) {
   const percentage = Math.min(Math.max(score, 0), 100)
   const color = percentage >= 85 ? '#10b981' : percentage >= 70 ? '#f59e0b' : '#ef4444'
-
   return (
     <div className="relative w-16 h-16">
       <svg className="w-16 h-16 -rotate-90" viewBox="0 0 50 50">
@@ -26,7 +25,15 @@ function ScoreRing({ score }) {
   )
 }
 
-export function ProfileCard({ profile: p, onOpen, onPass }) {
+interface Props {
+  profile: MockProfile
+  matchScore: number
+  matchExplanation: string
+  onOpen: (p: MockProfile) => void
+  onPass: (id: string) => void
+}
+
+export function ProfileCard({ profile: p, matchScore, matchExplanation, onOpen, onPass }: Props) {
   const typeStyle = TYPE_COLORS[p.founder_type] || TYPE_COLORS.Hacker
 
   return (
@@ -47,9 +54,8 @@ export function ProfileCard({ profile: p, onOpen, onPass }) {
             </span>
           </div>
         </div>
-
         <div className="flex flex-col items-end">
-          <ScoreRing score={p.pow_score} />
+          <ScoreRing score={matchScore} />
           <span className="text-xs text-zinc-400 mt-1">MATCH</span>
         </div>
       </div>
@@ -57,7 +63,9 @@ export function ProfileCard({ profile: p, onOpen, onPass }) {
       <div className="mx-6 border-t border-zinc-100 pt-5 pb-4">
         <p className="uppercase text-xs font-semibold text-zinc-400 tracking-widest mb-3">Prueba de trabajo</p>
         <div className="flex gap-4 bg-zinc-50 rounded-2xl p-5 border border-zinc-100">
-          <div className="px-3.5 py-1 bg-white text-xs font-medium border rounded-xl self-start">Stripe</div>
+          <div className="px-3.5 py-1 bg-white text-xs font-medium border rounded-xl self-start">
+            {p.top_pow_source === 'stripe' ? 'Stripe' : p.top_pow_source === 'github' ? 'GitHub' : p.top_pow_source === 'linkedin' ? 'LinkedIn' : 'Doc'}
+          </div>
           <div>
             <p className="font-medium text-zinc-900">{p.top_pow}</p>
             <p className="text-sm text-zinc-500 mt-1">{p.top_pow_metric}</p>
@@ -68,7 +76,7 @@ export function ProfileCard({ profile: p, onOpen, onPass }) {
       <div className="mx-6 mb-6 bg-zinc-50 rounded-2xl p-5 border border-zinc-100">
         <p className="uppercase text-xs font-semibold text-zinc-400 tracking-widest mb-2">Por qué la IA os sugiere</p>
         <p className="text-sm text-zinc-600 leading-relaxed line-clamp-3">
-          {p.ai_explain}
+          {matchExplanation}
         </p>
       </div>
 

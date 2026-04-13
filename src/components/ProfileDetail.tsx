@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { MockProfile } from '../data/mockProfiles'
+import { MockProfile, FounderType } from '../data/mockProfiles'
+import { calculateMatchScore } from '../lib/matchScore'
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
   Hacker:  { bg: 'bg-blue-50', text: 'text-blue-700', accent: '#3b82f6' },
@@ -9,13 +10,23 @@ const TYPE_COLORS: Record<string, { bg: string; text: string; accent: string }> 
   Legal:   { bg: 'bg-rose-50', text: 'text-rose-700', accent: '#e11d48' },
 }
 
+interface MyProfile {
+  founder_type: FounderType
+  full_name: string
+  bio: string
+  skills: { label: string; cat: string }[]
+  seeking: string[]
+  location?: string
+}
+
 interface Props {
   profile: MockProfile | null
   myProfileId: string | null
+  myProfile: MyProfile | null
   onClose: () => void
 }
 
-export function ProfileDetail({ profile, myProfileId, onClose }: Props) {
+export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Props) {
   const [visible, setVisible] = useState(false)
   const [showConnectModal, setShowConnectModal] = useState(false)
   const [alreadySent, setAlreadySent] = useState(false)
@@ -24,7 +35,6 @@ export function ProfileDetail({ profile, myProfileId, onClose }: Props) {
   useEffect(() => {
     if (profile) {
       requestAnimationFrame(() => setVisible(true))
-      // Comprobar si ya envié solicitud a este perfil
       if (myProfileId) {
         supabase
           .from('connections')
@@ -46,8 +56,20 @@ export function ProfileDetail({ profile, myProfileId, onClose }: Props) {
 
   const p = profile
   const typeStyle = TYPE_COLORS[p.founder_type] || TYPE_COLORS.Hacker
-  const totalScore = Math.round((p.score_hhm || 0) * 0.4 + (p.score_skills || 0) * 0.3 + (p.score_vision || 0) * 0.3)
-  const scoreColor = totalScore >= 80 ? '#10b981' : totalScore >= 65 ? '#f59e0b' : '#ef4444'
+
+  // Calculate match dynamically
+  const defaultMyProfile: MyProfile = {
+    founder_type: 'Legal',
+    full_name: 'Tú',
+    bio: '',
+    skills: [],
+    seeking: [],
+    location: 'Málaga',
+  }
+  const me = myProfile || defaultMyProfile
+  const match = calculateMatchScore(me, p)
+
+  const scoreColor = match.score >= 80 ? '#10b981' : match.score >= 65 ? '#f59e0b' : '#ef4444'
 
   const handleClose = () => {
     setVisible(false)
@@ -127,12 +149,12 @@ export function ProfileDetail({ profile, myProfileId, onClose }: Props) {
             <div className="flex items-center justify-between mb-5">
               <div>
                 <p className="text-6xl font-black tracking-tighter" style={{ color: scoreColor }}>
-                  {totalScore}
+                  {match.score}
                 </p>
                 <p className="text-sm text-zinc-500 -mt-1">MATCH</p>
               </div>
               <div className="text-right text-xs text-zinc-400">
-                Basado en IA +<br />PoW verificada
+                Basado en reglas de<br />complementariedad
               </div>
             </div>
 
@@ -140,30 +162,30 @@ export function ProfileDetail({ profile, myProfileId, onClose }: Props) {
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span>Oposición de tipo (HHM)</span>
-                  <span className="font-medium">{p.score_hhm || 0}%</span>
+                  <span className="font-medium">{match.score_hhm}%</span>
                 </div>
                 <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${p.score_hhm || 0}%` }} />
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${match.score_hhm}%` }} />
                 </div>
               </div>
 
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span>Cobertura de skills</span>
-                  <span className="font-medium">{p.score_skills || 0}%</span>
+                  <span className="font-medium">{match.score_skills}%</span>
                 </div>
                 <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${p.score_skills || 0}%` }} />
+                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${match.score_skills}%` }} />
                 </div>
               </div>
 
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span>Alineación de visión</span>
-                  <span className="font-medium">{p.score_vision || 0}%</span>
+                  <span className="font-medium">{match.score_vision}%</span>
                 </div>
                 <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${p.score_vision || 0}%` }} />
+                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${match.score_vision}%` }} />
                 </div>
               </div>
             </div>
@@ -175,7 +197,7 @@ export function ProfileDetail({ profile, myProfileId, onClose }: Props) {
               <span className="text-2xl">✦</span>
               <p className="font-semibold text-amber-800">Por qué la IA os sugiere</p>
             </div>
-            <p className="text-amber-700 leading-relaxed">{p.ai_explain}</p>
+            <p className="text-amber-700 leading-relaxed">{match.explanation}</p>
           </div>
 
           {/* Métricas verificadas */}
