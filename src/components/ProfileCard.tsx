@@ -1,12 +1,6 @@
 import React from 'react'
 import { MockProfile } from '../data/mockProfiles'
-
-const TYPE_COLORS = {
-  Hacker:  { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  Hustler: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  Money:   { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  Legal:   { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
-}
+import { Avatar } from './Avatar'
 
 function ScoreRing({ score }: { score: number }) {
   const percentage = Math.min(Math.max(score, 0), 100)
@@ -34,8 +28,6 @@ interface Props {
 }
 
 export function ProfileCard({ profile: p, matchScore, matchExplanation, onOpen, onPass }: Props) {
-  const typeStyle = TYPE_COLORS[p.founder_type] || TYPE_COLORS.Hacker
-
   return (
     <div 
       className="bg-white rounded-3xl border border-zinc-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden"
@@ -43,13 +35,16 @@ export function ProfileCard({ profile: p, matchScore, matchExplanation, onOpen, 
     >
       <div className="p-6 flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold ${typeStyle.bg} ${typeStyle.text}`}>
-            {p.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
-          </div>
+          <Avatar
+            name={p.full_name}
+            founderType={p.founder_type}
+            avatarUrl={(p as any).avatar_url}
+            size="md"
+          />
           <div>
             <h3 className="font-semibold text-xl text-zinc-900">{p.full_name}</h3>
             <p className="text-sm text-zinc-500">{p.role} · {p.location}</p>
-            <span className={`inline-block mt-2 px-4 py-1 text-xs font-medium rounded-full border ${typeStyle.border} ${typeStyle.text}`}>
+            <span className="inline-block mt-2 px-4 py-1 text-xs font-medium rounded-full border bg-zinc-50 text-zinc-600">
               {p.founder_type}
             </span>
           </div>

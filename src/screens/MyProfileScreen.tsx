@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { FounderType } from '../data/mockProfiles'
+import { Avatar } from '../components/Avatar'
 
 const TYPE_COLORS: Record<FounderType, string> = {
   Hacker:  'bg-blue-100 text-blue-700',
@@ -20,11 +21,20 @@ interface ProfileData {
   bio: string
   skills: { label: string; cat: string }[]
   seeking: string[]
+  avatar_url: string | null
 }
 
 export function MyProfileScreen({ myProfileId, onBack }: Props) {
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }
 
   useEffect(() => {
     if (!myProfileId) { setLoading(false); return }
@@ -42,16 +52,49 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
             bio: data.bio || '',
             skills: Array.isArray(data.skills) ? data.skills : [],
             seeking: Array.isArray(data.seeking) ? data.seeking : [],
+            avatar_url: data.avatar_url || null,
           })
         }
         setLoading(false)
       })
   }, [myProfileId])
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !myProfileId) return
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('La imagen debe pesar menos de 2MB')
+      return
+    }
+
+    setUploading(true)
+    const ext = file.name.split('.').pop()
+    const path = `${myProfileId}.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+
+    if (uploadError) {
+      setUploading(false)
+      showToast('Error al subir la imagen')
+      return
+    }
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    const avatarUrl = `${data.publicUrl}?t=${Date.now()}`
+
+    await supabase
+      .from('profiles')
+      .update({ avatar_url: avatarUrl })
+      .eq('id', myProfileId)
+
+    setProfile(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev)
+    setUploading(false)
+    showToast('Foto actualizada')
+  }
+
   const typeColor = profile ? TYPE_COLORS[profile.founder_type] || TYPE_COLORS.Hacker : ''
-  const initials = profile
-    ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
-    : '?'
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -82,10 +125,29 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
           <div className="space-y-5">
             {/* Avatar + Name */}
             <div className="bg-white rounded-2xl border border-zinc-100 p-6 text-center">
-              <div className={`w-20 h-20 rounded-3xl flex items-center justify-center text-3xl font-bold mx-auto mb-4 ${typeColor}`}>
-                {initials}
+              <div className="relative inline-block">
+                <Avatar
+                  name={profile.full_name}
+                  founderType={profile.founder_type}
+                  avatarUrl={profile.avatar_url}
+                  size="lg"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="absolute -bottom-1 -right-1 w-8 h-8 bg-zinc-900 text-white rounded-full flex items-center justify-center text-sm hover:bg-black transition-colors"
+                >
+                  {uploading ? '…' : '📷'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
               </div>
-              <h2 className="text-2xl font-bold text-zinc-900">{profile.full_name}</h2>
+              <h2 className="text-2xl font-bold text-zinc-900 mt-4">{profile.full_name}</h2>
               <span className={`inline-block mt-2 px-4 py-1 rounded-full text-sm font-medium ${typeColor}`}>
                 {profile.founder_type}
               </span>
@@ -131,13 +193,18 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
               )}
             </div>
 
-            {/* Profile ID (for debugging, can remove later) */}
             <div className="text-center">
               <p className="text-xs text-zinc-300">ID: {myProfileId}</p>
             </div>
           </div>
         )}
       </main>
+
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white text-sm px-6 py-3 rounded-2xl shadow-xl">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

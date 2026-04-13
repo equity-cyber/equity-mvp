@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { FounderType } from '../data/mockProfiles'
 
@@ -29,8 +29,37 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
   const [busca,        setBusca]        = useState('')
   const [loading,      setLoading]      = useState(false)
   const [error,        setError]        = useState<string | null>(null)
+  const [avatarFile,   setAvatarFile]   = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const canSubmit = fullName.trim() && founderType && bio.trim()
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      setError('La imagen debe pesar menos de 2MB')
+      return
+    }
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+  }
+
+  const uploadAvatar = async (profileId: string): Promise<string | null> => {
+    if (!avatarFile) return null
+    const ext = avatarFile.name.split('.').pop()
+    const path = `${profileId}.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, avatarFile, { upsert: true })
+
+    if (uploadError) return null
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    return data.publicUrl
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,8 +82,20 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
       .select('id')
       .single()
 
+    if (err) { setLoading(false); setError(err.message); return }
+
+    // Upload avatar if selected
+    if (data?.id && avatarFile) {
+      const avatarUrl = await uploadAvatar(data.id)
+      if (avatarUrl) {
+        await supabase
+          .from('profiles')
+          .update({ avatar_url: avatarUrl })
+          .eq('id', data.id)
+      }
+    }
+
     setLoading(false)
-    if (err) { setError(err.message); return }
     onComplete(data?.id ?? null, founderType)
   }
 
@@ -69,6 +110,34 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+
+          {/* Avatar */}
+          <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex flex-col items-center">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-3 self-start">
+              Foto de perfil
+            </label>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="w-24 h-24 rounded-3xl bg-zinc-100 flex items-center justify-center cursor-pointer hover:bg-zinc-200 transition-colors overflow-hidden border-2 border-dashed border-zinc-300"
+            >
+              {avatarPreview ? (
+                <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+              ) : (
+                <div className="text-center">
+                  <span className="text-3xl">📷</span>
+                  <p className="text-xs text-zinc-400 mt-1">Subir</p>
+                </div>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
+            <p className="text-xs text-zinc-400 mt-2">Opcional · Máx 2MB</p>
+          </div>
 
           {/* Nombre */}
           <div className="bg-white rounded-2xl border border-zinc-200 p-4">
