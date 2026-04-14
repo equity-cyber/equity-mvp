@@ -28,6 +28,10 @@ interface Props {
 }
 
 export function ProfileCard({ profile: p, matchScore, matchExplanation, onOpen, onPass }: Props) {
+  const ext = p as any
+  const hasGithub = !!ext.github_username
+  const hasLinkedin = !!ext.linkedin_url
+
   return (
     <div 
       className="bg-white rounded-3xl border border-zinc-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden"
@@ -38,15 +42,27 @@ export function ProfileCard({ profile: p, matchScore, matchExplanation, onOpen, 
           <Avatar
             name={p.full_name}
             founderType={p.founder_type}
-            avatarUrl={(p as any).avatar_url}
+            avatarUrl={ext.avatar_url}
             size="md"
           />
           <div>
             <h3 className="font-semibold text-xl text-zinc-900">{p.full_name}</h3>
             <p className="text-sm text-zinc-500">{p.role} · {p.location}</p>
-            <span className="inline-block mt-2 px-4 py-1 text-xs font-medium rounded-full border bg-zinc-50 text-zinc-600">
-              {p.founder_type}
-            </span>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="px-4 py-1 text-xs font-medium rounded-full border bg-zinc-50 text-zinc-600">
+                {p.founder_type}
+              </span>
+              {hasGithub && (
+                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-900 text-white">
+                  🐙 GitHub
+                </span>
+              )}
+              {hasLinkedin && (
+                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-600 text-white">
+                  💼 LinkedIn
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-col items-end">

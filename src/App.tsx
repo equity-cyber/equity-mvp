@@ -19,6 +19,7 @@ export default function App() {
   const [myFounderType, setMyFounderType] = useState<FounderType | null>(null)
   const [chatConnectionId, setChatConnectionId] = useState<string | null>(null)
   const [chatOtherName, setChatOtherName] = useState<string>('')
+  const [chatOtherProfileId, setChatOtherProfileId] = useState<string>('')
 
   useEffect(() => {
     if (loading) return
@@ -78,9 +79,10 @@ export default function App() {
     <ConnectionsScreen
       myProfileId={myProfileId}
       onBack={() => setScreen('feed')}
-      onOpenChat={(connectionId, otherName) => {
+      onOpenChat={(connectionId, otherName, otherProfileId) => {
         setChatConnectionId(connectionId)
         setChatOtherName(otherName)
+        setChatOtherProfileId(otherProfileId)
         setScreen('chat')
       }}
     />
@@ -90,6 +92,7 @@ export default function App() {
     <ChatScreen
       connectionId={chatConnectionId}
       myProfileId={myProfileId}
+      otherProfileId={chatOtherProfileId}
       otherName={chatOtherName}
       onBack={() => setScreen('connections')}
     />

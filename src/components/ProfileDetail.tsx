@@ -32,31 +32,39 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
   const [showConnectModal, setShowConnectModal] = useState(false)
   const [alreadySent, setAlreadySent] = useState(false)
   const [sending, setSending] = useState(false)
+  const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
     if (profile) {
       requestAnimationFrame(() => setVisible(true))
       if (myProfileId) {
+        // Check if already sent connection
         supabase
           .from('connections')
-          .select('id')
-          .eq('from_profile_id', myProfileId)
-          .eq('to_profile_id', profile.id)
-          .maybeSingle()
+          .select('id, status')
+          .or(`and(from_profile_id.eq.${myProfileId},to_profile_id.eq.${profile.id}),and(from_profile_id.eq.${profile.id},to_profile_id.eq.${myProfileId})`)
           .then(({ data }) => {
-            if (data) setAlreadySent(true)
+            if (data && data.length > 0) {
+              const conn = data[0]
+              if (conn.status === 'accepted') setIsConnected(true)
+              setAlreadySent(true)
+            }
           })
       }
     } else {
       setVisible(false)
       setAlreadySent(false)
+      setIsConnected(false)
     }
   }, [profile, myProfileId])
 
   if (!profile) return null
 
   const p = profile
+  const ext = p as any
   const typeStyle = TYPE_COLORS[p.founder_type] || TYPE_COLORS.Hacker
+  const hasGithub = !!ext.github_username
+  const hasLinkedin = !!ext.linkedin_url
 
   const defaultMyProfile: MyProfile = {
     founder_type: 'Legal',
@@ -115,14 +123,26 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
               <Avatar
                 name={p.full_name}
                 founderType={p.founder_type}
-                avatarUrl={(p as any).avatar_url}
+                avatarUrl={ext.avatar_url}
                 size="lg"
               />
               <div>
                 <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">{p.full_name}</h2>
                 <p className="text-zinc-500">{p.role} · {p.location}</p>
-                <div className={`inline-flex mt-2 px-4 py-1 rounded-full text-sm font-medium border ${typeStyle.bg} ${typeStyle.text}`}>
-                  {p.founder_type}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <div className={`inline-flex px-4 py-1 rounded-full text-sm font-medium border ${typeStyle.bg} ${typeStyle.text}`}>
+                    {p.founder_type}
+                  </div>
+                  {hasGithub && (
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-900 text-white">
+                      🐙 GitHub
+                    </span>
+                  )}
+                  {hasLinkedin && (
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-600 text-white">
+                      💼 LinkedIn
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -133,6 +153,43 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
               ✕
             </button>
           </div>
+
+          {/* Links visibles solo si conectados */}
+          {isConnected && (hasGithub || hasLinkedin) && (
+            <div className="mt-5 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">🔓 Enlaces verificados</p>
+              <div className="space-y-2">
+                {hasGithub && (
+                  <a
+                    href={`https://github.com/${ext.github_username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-emerald-800 hover:underline"
+                  >
+                    🐙 github.com/{ext.github_username}
+                  </a>
+                )}
+                {hasLinkedin && (
+                  <a
+                    href={ext.linkedin_url.startsWith('http') ? ext.linkedin_url : `https://${ext.linkedin_url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-emerald-800 hover:underline"
+                  >
+                    💼 {ext.linkedin_url}
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isConnected && (hasGithub || hasLinkedin) && (
+            <div className="mt-5 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
+              <p className="text-xs text-zinc-500">
+                🔒 Los enlaces de GitHub y LinkedIn se desbloquean al aceptar la conexión
+              </p>
+            </div>
+          )}
 
           <div className="mt-7 mb-8 p-5 bg-zinc-50 rounded-2xl border border-zinc-100">
             <p className="text-zinc-700 leading-relaxed">{p.bio}</p>
@@ -218,7 +275,7 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
                 : 'bg-zinc-900 hover:bg-black text-white'
             }`}
           >
-            {sending ? 'Enviando…' : alreadySent ? '✓ Solicitud enviada' : `Conectar con ${p.full_name.split(' ')[0]} →`}
+            {sending ? 'Enviando…' : alreadySent ? (isConnected ? '✓ Conectados' : '✓ Solicitud enviada') : `Conectar con ${p.full_name.split(' ')[0]} →`}
           </button>
           <p className="text-center text-xs text-zinc-400 mt-4">
             El chat se desbloqueará cuando ambos aceptéis

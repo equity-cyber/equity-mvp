@@ -9,6 +9,7 @@ interface Connection {
   created_at: string
   profile_name?: string
   profile_type?: string
+  other_profile_id?: string
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -21,7 +22,7 @@ const TYPE_COLORS: Record<string, string> = {
 interface Props {
   myProfileId: string | null
   onBack: () => void
-  onOpenChat: (connectionId: string, otherName: string) => void
+  onOpenChat: (connectionId: string, otherName: string, otherProfileId: string) => void
 }
 
 export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
@@ -40,7 +41,6 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
   const loadConnections = async () => {
     if (!myProfileId) { setLoading(false); return }
 
-    // Get all connections involving me
     const { data: allConnections } = await supabase
       .from('connections')
       .select('*')
@@ -48,7 +48,6 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
 
     if (!allConnections) { setLoading(false); return }
 
-    // Get all profile IDs we need to look up
     const profileIds = new Set<string>()
     allConnections.forEach(c => {
       profileIds.add(c.from_profile_id)
@@ -56,7 +55,6 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
     })
     profileIds.delete(myProfileId)
 
-    // Look up profile names from Supabase
     const { data: profiles } = await supabase
       .from('profiles')
       .select('id, full_name, founder_type')
@@ -68,16 +66,15 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
       })
     }
 
-    // Mock profile names for mock IDs
     const mockNames: Record<string, { name: string; type: string }> = {
       'luis-m':   { name: 'Luis M.', type: 'Hacker' },
-      'amir-k':   { name: 'Amir K.', type: 'Money' },
-      'mei-l':    { name: 'Mei L.', type: 'Hacker' },
-      'sara-p':   { name: 'Sara P.', type: 'Hustler' },
-      'marco-v':  { name: 'Marco V.', type: 'Hacker' },
-      'nadia-r':  { name: 'Nadia R.', type: 'Money' },
-      'pablo-c':  { name: 'Pablo C.', type: 'Hustler' },
-      'chen-w':   { name: 'Chen W.', type: 'Hacker' },
+      'amir-k':  { name: 'Amir K.', type: 'Money' },
+      'mei-l':   { name: 'Mei L.', type: 'Hacker' },
+      'sara-p':  { name: 'Sara P.', type: 'Hustler' },
+      'marco-v': { name: 'Marco V.', type: 'Hacker' },
+      'nadia-r': { name: 'Nadia R.', type: 'Money' },
+      'pablo-c': { name: 'Pablo C.', type: 'Hustler' },
+      'chen-w':  { name: 'Chen W.', type: 'Hacker' },
     }
 
     const getName = (id: string) => profileMap[id]?.name || mockNames[id]?.name || 'Usuario'
@@ -89,6 +86,7 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
         ...c,
         profile_name: getName(otherId),
         profile_type: getType(otherId),
+        other_profile_id: otherId,
       }
     })
 
@@ -146,7 +144,6 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-zinc-100">
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-3">
           <button
@@ -161,7 +158,6 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="max-w-lg mx-auto px-4 pb-3 flex gap-2">
           {tabs.map(t => (
             <button
@@ -212,12 +208,10 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
               return (
                 <div key={conn.id} className="bg-white rounded-2xl border border-zinc-100 p-4">
                   <div className="flex items-center gap-3">
-                    {/* Avatar */}
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold ${typeColor}`}>
                       {initials}
                     </div>
 
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-zinc-900 truncate">{conn.profile_name}</p>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -228,7 +222,6 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     {tab === 'received' && (
                       <div className="flex gap-2">
                         <button
@@ -248,7 +241,7 @@ export function ConnectionsScreen({ myProfileId, onBack, onOpenChat }: Props) {
 
                     {tab === 'accepted' && (
                       <button
-                        onClick={() => onOpenChat(conn.id, conn.profile_name || 'Usuario')}
+                        onClick={() => onOpenChat(conn.id, conn.profile_name || 'Usuario', conn.other_profile_id || '')}
                         className="px-4 py-2 text-sm bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700"
                       >
                         Chat →
