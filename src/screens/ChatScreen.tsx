@@ -10,6 +10,44 @@ interface Message {
 
 const FREE_MESSAGE_LIMIT = 3
 
+const PLANS = [
+  {
+    id: 'single',
+    name: 'Single Match',
+    price: '4,99€',
+    desc: 'Chat ilimitado con 1 match',
+    priceId: 'price_1TMOBHU8xknUjRYeCsgbwze',
+    badge: 'Compra única',
+  },
+  {
+    id: 'pack3',
+    name: 'Pack 3 Matches',
+    price: '12,99€',
+    desc: 'Chat ilimitado con 3 matches',
+    priceId: 'price_1TMBOrHU8xknUjRYb97ATzmD',
+    badge: 'Más popular',
+  },
+  {
+    id: 'monthly',
+    name: 'Pro Monthly',
+    price: '16,99€/mes',
+    desc: 'Chat ilimitado con todos tus matches',
+    priceId: 'price_1TMBPTHU8xknUjRYUNwtvgTm',
+    badge: 'Ilimitado',
+  },
+  {
+    id: 'yearly',
+    name: 'Pro Yearly',
+    price: '149€/año',
+    desc: 'Todo ilimitado — ahorra 27%',
+    priceId: 'price_1TMBQCHU8xknUjRYcA3FnSYQ',
+    badge: 'Mejor precio',
+  },
+]
+
+const SUPABASE_FUNCTION_URL = 'https://eocfuhidteqlatkxhrac.supabase.co/functions/v1/clever-handler'
+const SUPABASE_ANON_KEY = 'sb_publishable_NOfzEoKGisEUEOAwSMbRMA_O2Gdjb8d'
+
 interface Props {
   connectionId: string
   myProfileId: string | null
@@ -31,6 +69,8 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
   const [reportSent, setReportSent] = useState(false)
   const [showPaywall, setShowPaywall] = useState(false)
   const [totalSentByMe, setTotalSentByMe] = useState(0)
+  const [isPremium, setIsPremium] = useState(false)
+  const [loadingCheckout, setLoadingCheckout] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -50,7 +90,6 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     setLoading(false)
   }
 
-  // Count ALL messages sent by this user across ALL chats
   const loadTotalSent = async () => {
     if (!myProfileId) return
     const { count } = await supabase
@@ -61,7 +100,34 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     setTotalSentByMe(count ?? 0)
   }
 
-  // Check block status
+  const checkPremium = async () => {
+    if (!myProfileId) return
+    const { data } = await supabase
+      .from('profiles')
+      .select('is_premium')
+      .eq('id', myProfileId)
+      .single()
+
+    if (data?.is_premium) setIsPremium(true)
+  }
+
+  // Check if payment=success in URL (returning from Stripe)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('payment') === 'success' && myProfileId) {
+      supabase
+        .from('profiles')
+        .update({ is_premium: true })
+        .eq('id', myProfileId)
+        .then(() => {
+          setIsPremium(true)
+          showToast('¡Pago completado! Chat ilimitado desbloqueado.')
+          // Clean URL
+          window.history.replaceState({}, '', window.location.pathname)
+        })
+    }
+  }, [myProfileId])
+
   useEffect(() => {
     supabase
       .from('connections')
@@ -79,6 +145,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
   useEffect(() => {
     loadMessages()
     loadTotalSent()
+    checkPremium()
     const interval = setInterval(() => {
       loadMessages()
       loadTotalSent()
@@ -92,7 +159,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     }
   }, [messages])
 
-  const isOverLimit = totalSentByMe >= FREE_MESSAGE_LIMIT
+  const isOverLimit = !isPremium && totalSentByMe >= FREE_MESSAGE_LIMIT
   const remainingMessages = Math.max(0, FREE_MESSAGE_LIMIT - totalSentByMe)
 
   const handleSend = async () => {
@@ -157,6 +224,35 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     }, 1500)
   }
 
+  const handleCheckout = async (priceId: string) => {
+    setLoadingCheckout(true)
+    try {
+      const res = await fetch(SUPABASE_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          priceId,
+          profileId: myProfileId,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        showToast('Error al crear el pago. Inténtalo de nuevo.')
+      }
+    } catch (err) {
+      showToast('Error de conexión. Inténtalo de nuevo.')
+    }
+    setLoadingCheckout(false)
+  }
+
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
@@ -181,7 +277,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
               <div>
                 <p className="font-semibold text-zinc-900">{otherName}</p>
                 <p className={`text-xs ${blocked || blockedByOther ? 'text-red-500' : 'text-emerald-600'}`}>
-                  {blocked || blockedByOther ? 'Chat bloqueado' : 'Conectados'}
+                  {blocked || blockedByOther ? 'Chat bloqueado' : isPremium ? '💎 Premium' : 'Conectados'}
                 </p>
               </div>
             </div>
@@ -230,7 +326,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
       )}
 
       {/* Free messages counter */}
-      {!blocked && !blockedByOther && !loading && !isOverLimit && (
+      {!blocked && !blockedByOther && !loading && !isPremium && !isOverLimit && (
         <div className="bg-amber-50 border-b border-amber-100 px-4 py-2">
           <p className="text-xs text-amber-700 text-center max-w-lg mx-auto">
             💬 Te quedan <span className="font-bold">{remainingMessages}</span> mensaje{remainingMessages !== 1 ? 's' : ''} gratis en toda la app
@@ -310,47 +406,73 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
         </div>
       </div>
 
-      {/* Paywall Modal */}
+      {/* Paywall Modal with real Stripe plans */}
       {showPaywall && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-100 to-orange-100 rounded-2xl flex items-center justify-center">
-              <span className="text-4xl">💎</span>
-            </div>
-            <h3 className="text-xl font-bold text-zinc-900 mb-2">Chat ilimitado</h3>
-            <p className="text-sm text-zinc-500 mb-2">
-              Has utilizado tus {FREE_MESSAGE_LIMIT} mensajes gratuitos.
-            </p>
-            <p className="text-sm text-zinc-500 mb-6">
-              Desbloquea mensajes ilimitados con todos tus matches por solo:
-            </p>
-
-            <div className="bg-zinc-50 rounded-2xl p-4 mb-6 border border-zinc-200">
-              <p className="text-3xl font-black text-zinc-900">9,99€<span className="text-base font-normal text-zinc-500">/mes</span></p>
-              <div className="mt-3 space-y-1.5 text-left">
-                <p className="text-xs text-zinc-600">✅ Mensajes ilimitados con todos tus matches</p>
-                <p className="text-xs text-zinc-600">✅ Ver quién ha visitado tu perfil</p>
-                <p className="text-xs text-zinc-600">✅ Prioridad en el feed de otros usuarios</p>
-                <p className="text-xs text-zinc-600">✅ Badge "Verificado" en tu perfil</p>
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-5">
+              <div className="w-16 h-16 mx-auto mb-3 bg-gradient-to-br from-amber-100 to-orange-100 rounded-2xl flex items-center justify-center">
+                <span className="text-4xl">💎</span>
               </div>
+              <h3 className="text-xl font-bold text-zinc-900">Desbloquea el chat</h3>
+              <p className="text-sm text-zinc-500 mt-1">
+                Has usado tus {FREE_MESSAGE_LIMIT} mensajes gratuitos
+              </p>
             </div>
 
-            <button
-              onClick={() => {
-                showToast('Próximamente — sistema de pago en desarrollo')
-                setShowPaywall(false)
-              }}
-              className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-2xl hover:from-amber-600 hover:to-orange-600 transition-all text-sm"
-            >
-              Desbloquear ahora →
-            </button>
+            <div className="space-y-3 mb-5">
+              {PLANS.map(plan => (
+                <button
+                  key={plan.id}
+                  onClick={() => handleCheckout(plan.priceId)}
+                  disabled={loadingCheckout}
+                  className={`w-full p-4 rounded-2xl border-2 text-left transition-all hover:shadow-md disabled:opacity-60 ${
+                    plan.id === 'pack3'
+                      ? 'border-amber-400 bg-amber-50'
+                      : 'border-zinc-200 bg-white hover:border-zinc-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-zinc-900">{plan.name}</p>
+                        {plan.id === 'pack3' && (
+                          <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-white">
+                            ⭐ Popular
+                          </span>
+                        )}
+                        {plan.id === 'yearly' && (
+                          <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-emerald-500 text-white">
+                            -27%
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-0.5">{plan.desc}</p>
+                    </div>
+                    <p className="text-lg font-black text-zinc-900">{plan.price}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
 
-            <button
-              onClick={() => setShowPaywall(false)}
-              className="w-full py-2 text-sm text-zinc-400 hover:text-zinc-600 mt-3"
-            >
-              Ahora no
-            </button>
+            {loadingCheckout && (
+              <div className="text-center py-2 mb-3">
+                <div className="w-6 h-6 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto"/>
+                <p className="text-xs text-zinc-400 mt-2">Preparando pago seguro…</p>
+              </div>
+            )}
+
+            <div className="text-center">
+              <button
+                onClick={() => setShowPaywall(false)}
+                className="text-sm text-zinc-400 hover:text-zinc-600"
+              >
+                Ahora no
+              </button>
+              <p className="text-xs text-zinc-300 mt-3">
+                Pago seguro con Stripe 🔒
+              </p>
+            </div>
           </div>
         </div>
       )}

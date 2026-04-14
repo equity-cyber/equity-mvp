@@ -21,6 +21,21 @@ export default function App() {
   const [chatOtherName, setChatOtherName] = useState<string>('')
   const [chatOtherProfileId, setChatOtherProfileId] = useState<string>('')
 
+  // Check for payment success on load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const profileId = params.get('profile_id')
+    if (params.get('payment') === 'success' && profileId) {
+      supabase
+        .from('profiles')
+        .update({ is_premium: true })
+        .eq('id', profileId)
+        .then(() => {
+          window.history.replaceState({}, '', window.location.pathname)
+        })
+    }
+  }, [])
+
   useEffect(() => {
     if (loading) return
     if (guest) { setScreen('onboarding'); return }
