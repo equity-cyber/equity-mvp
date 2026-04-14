@@ -6,22 +6,34 @@ interface Props {
 }
 
 export function LoginScreen({ onGuest }: Props) {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, resetPassword } = useAuth()
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
   const [isSignUp, setIsSignUp]   = useState(false)
+  const [isReset, setIsReset]     = useState(false)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [success, setSuccess]     = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+    setSuccess(null)
+
+    if (isReset) {
+      if (!email.trim()) return
+      setLoading(true)
+      const { error: err } = await resetPassword(email.trim().toLowerCase())
+      setLoading(false)
+      if (err) { setError(err); return }
+      setSuccess('Te hemos enviado un enlace para restablecer tu contraseña. Revisa tu email.')
+      return
+    }
+
     if (!email.trim() || !password.trim()) return
     if (password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return }
 
     setLoading(true)
-    setError(null)
-    setSuccess(null)
 
     if (isSignUp) {
       const { error: err } = await signUp(email.trim().toLowerCase(), password)
@@ -48,7 +60,6 @@ export function LoginScreen({ onGuest }: Props) {
         }
         return
       }
-      // signIn successful — onAuthStateChange will handle the rest
     }
   }
 
@@ -62,10 +73,13 @@ export function LoginScreen({ onGuest }: Props) {
 
         <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-sm">
           <h2 className="text-lg font-bold text-zinc-900 mb-1">
-            {isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}
+            {isReset ? 'Recuperar contraseña' : isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}
           </h2>
           <p className="text-sm text-zinc-500 mb-5">
-            {isSignUp ? 'Regístrate con email y contraseña' : 'Accede con tu cuenta'}
+            {isReset
+              ? 'Te enviaremos un enlace para restablecer tu contraseña'
+              : isSignUp ? 'Regístrate con email y contraseña' : 'Accede con tu cuenta'
+            }
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -84,19 +98,21 @@ export function LoginScreen({ onGuest }: Props) {
               />
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">
-                Contraseña
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder={isSignUp ? 'Mínimo 6 caracteres' : 'Tu contraseña'}
-                required
-                className="w-full px-4 py-3 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-              />
-            </div>
+            {!isReset && (
+              <div>
+                <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">
+                  Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder={isSignUp ? 'Mínimo 6 caracteres' : 'Tu contraseña'}
+                  required
+                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                />
+              </div>
+            )}
 
             {error && (
               <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2 border border-red-100">
@@ -112,24 +128,41 @@ export function LoginScreen({ onGuest }: Props) {
 
             <button
               type="submit"
-              disabled={loading || !email.trim() || !password.trim()}
+              disabled={loading || !email.trim() || (!isReset && !password.trim())}
               className="w-full py-3.5 rounded-xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 active:scale-[.99] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               {loading
                 ? <span className="flex items-center justify-center gap-2">
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
-                    {isSignUp ? 'Creando cuenta…' : 'Entrando…'}
+                    {isReset ? 'Enviando…' : isSignUp ? 'Creando cuenta…' : 'Entrando…'}
                   </span>
-                : isSignUp ? 'Crear cuenta →' : 'Entrar →'
+                : isReset ? 'Enviar enlace →' : isSignUp ? 'Crear cuenta →' : 'Entrar →'
               }
             </button>
           </form>
 
+          {!isReset && !isSignUp && (
+            <button
+              onClick={() => { setIsReset(true); setError(null); setSuccess(null) }}
+              className="w-full text-center text-sm text-zinc-400 hover:text-zinc-600 mt-3"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          )}
+
           <button
-            onClick={() => { setIsSignUp(!isSignUp); setError(null); setSuccess(null) }}
-            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-700 mt-4"
+            onClick={() => {
+              if (isReset) { setIsReset(false) }
+              else { setIsSignUp(!isSignUp) }
+              setError(null)
+              setSuccess(null)
+            }}
+            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-700 mt-3"
           >
-            {isSignUp ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
+            {isReset
+              ? '← Volver al inicio de sesión'
+              : isSignUp ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'
+            }
           </button>
 
           <div className="flex items-center gap-3 my-4">
