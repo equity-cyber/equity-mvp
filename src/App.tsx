@@ -20,19 +20,14 @@ export default function App() {
   const [chatConnectionId, setChatConnectionId] = useState<string | null>(null)
   const [chatOtherName, setChatOtherName] = useState<string>('')
   const [chatOtherProfileId, setChatOtherProfileId] = useState<string>('')
+  const [paymentSuccess, setPaymentSuccess] = useState(false)
 
-  // Check for payment success on load
+  // Check for payment return from Stripe (just show a toast, webhook handles the rest)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const profileId = params.get('profile_id')
-    if (params.get('payment') === 'success' && profileId) {
-      supabase
-        .from('profiles')
-        .update({ is_premium: true })
-        .eq('id', profileId)
-        .then(() => {
-          window.history.replaceState({}, '', window.location.pathname)
-        })
+    if (params.get('payment') === 'success') {
+      setPaymentSuccess(true)
+      window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
 
@@ -110,6 +105,7 @@ export default function App() {
       otherProfileId={chatOtherProfileId}
       otherName={chatOtherName}
       onBack={() => setScreen('connections')}
+      paymentJustCompleted={paymentSuccess}
     />
   )
 

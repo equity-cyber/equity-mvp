@@ -17,7 +17,6 @@ const PLANS = [
     price: '4,99€',
     desc: 'Chat ilimitado con 1 match',
     priceId: 'price_1TMOBHU8xknUjRYeCsgbwze',
-    badge: 'Compra única',
   },
   {
     id: 'pack3',
@@ -25,7 +24,6 @@ const PLANS = [
     price: '12,99€',
     desc: 'Chat ilimitado con 3 matches',
     priceId: 'price_1TMBOrHU8xknUjRYb97ATzmD',
-    badge: 'Más popular',
   },
   {
     id: 'monthly',
@@ -33,7 +31,6 @@ const PLANS = [
     price: '16,99€/mes',
     desc: 'Chat ilimitado con todos tus matches',
     priceId: 'price_1TMBPTHU8xknUjRYUNwtvgTm',
-    badge: 'Ilimitado',
   },
   {
     id: 'yearly',
@@ -41,7 +38,6 @@ const PLANS = [
     price: '149€/año',
     desc: 'Todo ilimitado — ahorra 27%',
     priceId: 'price_1TMBQCHU8xknUjRYcA3FnSYQ',
-    badge: 'Mejor precio',
   },
 ]
 
@@ -54,9 +50,10 @@ interface Props {
   otherProfileId: string
   otherName: string
   onBack: () => void
+  paymentJustCompleted?: boolean
 }
 
-export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherName, onBack }: Props) {
+export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherName, onBack, paymentJustCompleted }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -108,25 +105,38 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
       .eq('id', myProfileId)
       .single()
 
-    if (data?.is_premium) setIsPremium(true)
+    if (data?.is_premium) {
+      setIsPremium(true)
+    }
   }
 
-  // Check if payment=success in URL (returning from Stripe)
+  // Show toast if just returned from payment
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('payment') === 'success' && myProfileId) {
-      supabase
-        .from('profiles')
-        .update({ is_premium: true })
-        .eq('id', myProfileId)
-        .then(() => {
+    if (paymentJustCompleted) {
+      showToast('Pago procesado. Verificando...')
+      // Poll for premium status (webhook may take a few seconds)
+      let attempts = 0
+      const pollInterval = setInterval(async () => {
+        attempts++
+        const { data } = await supabase
+          .from('profiles')
+          .select('is_premium')
+          .eq('id', myProfileId)
+          .single()
+
+        if (data?.is_premium) {
           setIsPremium(true)
-          showToast('¡Pago completado! Chat ilimitado desbloqueado.')
-          // Clean URL
-          window.history.replaceState({}, '', window.location.pathname)
-        })
+          showToast('¡Chat ilimitado desbloqueado!')
+          clearInterval(pollInterval)
+        } else if (attempts >= 10) {
+          showToast('El pago se está procesando. Puede tardar unos minutos.')
+          clearInterval(pollInterval)
+        }
+      }, 3000)
+
+      return () => clearInterval(pollInterval)
     }
-  }, [myProfileId])
+  }, [paymentJustCompleted, myProfileId])
 
   useEffect(() => {
     supabase
@@ -359,7 +369,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
                       : 'bg-white border border-zinc-200 text-zinc-900 rounded-bl-md'
                   }`}>
                     <p className="text-sm leading-relaxed">{msg.content}</p>
-                    <p className={`text-xs mt-1 ${isMe ? 'text-zinc-400' : 'text-zinc-400'}`}>
+                    <p className={`text-xs mt-1 text-zinc-400`}>
                       {formatTime(msg.created_at)}
                     </p>
                   </div>
@@ -406,7 +416,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
         </div>
       </div>
 
-      {/* Paywall Modal with real Stripe plans */}
+      {/* Paywall Modal */}
       {showPaywall && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 max-h-[90vh] overflow-y-auto">
