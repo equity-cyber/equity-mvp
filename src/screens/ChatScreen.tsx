@@ -8,6 +8,8 @@ interface Message {
   created_at: string
 }
 
+const FREE_MESSAGE_LIMIT = 3
+
 interface Props {
   connectionId: string
   myProfileId: string | null
@@ -22,10 +24,13 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [blocked, setBlocked] = useState(false)
+  const [blockedByOther, setBlockedByOther] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportReason, setReportReason] = useState('')
   const [reportSent, setReportSent] = useState(false)
+  const [showPaywall, setShowPaywall] = useState(false)
+  const [totalSentByMe, setTotalSentByMe] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -45,7 +50,18 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     setLoading(false)
   }
 
-  // Check if blocked
+  // Count ALL messages sent by this user across ALL chats
+  const loadTotalSent = async () => {
+    if (!myProfileId) return
+    const { count } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('from_profile_id', myProfileId)
+
+    setTotalSentByMe(count ?? 0)
+  }
+
+  // Check block status
   useEffect(() => {
     supabase
       .from('connections')
@@ -53,15 +69,22 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
       .eq('id', connectionId)
       .single()
       .then(({ data }) => {
-        if (data?.status === 'blocked') setBlocked(true)
+        if (data?.status === 'blocked') {
+          setBlocked(true)
+          setBlockedByOther(true)
+        }
       })
   }, [connectionId])
 
   useEffect(() => {
     loadMessages()
-    const interval = setInterval(loadMessages, 3000)
+    loadTotalSent()
+    const interval = setInterval(() => {
+      loadMessages()
+      loadTotalSent()
+    }, 3000)
     return () => clearInterval(interval)
-  }, [connectionId])
+  }, [connectionId, myProfileId])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -69,8 +92,17 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     }
   }, [messages])
 
+  const isOverLimit = totalSentByMe >= FREE_MESSAGE_LIMIT
+  const remainingMessages = Math.max(0, FREE_MESSAGE_LIMIT - totalSentByMe)
+
   const handleSend = async () => {
-    if (!input.trim() || !myProfileId || sending || blocked) return
+    if (!input.trim() || !myProfileId || sending || blocked || blockedByOther) return
+
+    if (isOverLimit) {
+      setShowPaywall(true)
+      return
+    }
+
     setSending(true)
 
     const { error } = await supabase.from('messages').insert({
@@ -82,6 +114,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
 
     if (!error) {
       setInput('')
+      setTotalSentByMe(prev => prev + 1)
       await loadMessages()
     }
     setSending(false)
@@ -147,12 +180,13 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
               </div>
               <div>
                 <p className="font-semibold text-zinc-900">{otherName}</p>
-                <p className="text-xs text-emerald-600">{blocked ? 'Bloqueado' : 'Conectados'}</p>
+                <p className={`text-xs ${blocked || blockedByOther ? 'text-red-500' : 'text-emerald-600'}`}>
+                  {blocked || blockedByOther ? 'Chat bloqueado' : 'Conectados'}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Menu button */}
           <div className="relative">
             <button
               onClick={() => setShowMenu(!showMenu)}
@@ -165,7 +199,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                 <div className="absolute right-0 top-12 z-20 bg-white rounded-2xl border border-zinc-200 shadow-lg w-52 overflow-hidden">
-                  {!blocked && (
+                  {!blocked && !blockedByOther && (
                     <button
                       onClick={handleBlock}
                       className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 transition-colors border-b border-zinc-100"
@@ -185,6 +219,24 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
           </div>
         </div>
       </header>
+
+      {/* Blocked banner */}
+      {(blocked || blockedByOther) && (
+        <div className="bg-red-50 border-b border-red-100 px-4 py-3">
+          <p className="text-sm text-red-600 text-center max-w-lg mx-auto">
+            🚫 Este chat ha sido bloqueado. Ya no se pueden enviar ni recibir mensajes.
+          </p>
+        </div>
+      )}
+
+      {/* Free messages counter */}
+      {!blocked && !blockedByOther && !loading && !isOverLimit && (
+        <div className="bg-amber-50 border-b border-amber-100 px-4 py-2">
+          <p className="text-xs text-amber-700 text-center max-w-lg mx-auto">
+            💬 Te quedan <span className="font-bold">{remainingMessages}</span> mensaje{remainingMessages !== 1 ? 's' : ''} gratis en toda la app
+          </p>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 max-w-lg mx-auto w-full">
@@ -225,10 +277,17 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
       {/* Input */}
       <div className="sticky bottom-0 bg-white border-t border-zinc-100">
         <div className="max-w-lg mx-auto px-4 py-3 flex gap-2">
-          {blocked ? (
-            <p className="flex-1 text-center text-sm text-zinc-400 py-3">
-              Este usuario está bloqueado
+          {blocked || blockedByOther ? (
+            <p className="flex-1 text-center text-sm text-red-400 py-3">
+              🚫 Este chat ha sido bloqueado
             </p>
+          ) : isOverLimit ? (
+            <button
+              onClick={() => setShowPaywall(true)}
+              className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold rounded-2xl hover:from-amber-600 hover:to-orange-600 transition-all"
+            >
+              🔓 Desbloquear chat ilimitado
+            </button>
           ) : (
             <>
               <input
@@ -250,6 +309,51 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
           )}
         </div>
       </div>
+
+      {/* Paywall Modal */}
+      {showPaywall && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-100 to-orange-100 rounded-2xl flex items-center justify-center">
+              <span className="text-4xl">💎</span>
+            </div>
+            <h3 className="text-xl font-bold text-zinc-900 mb-2">Chat ilimitado</h3>
+            <p className="text-sm text-zinc-500 mb-2">
+              Has utilizado tus {FREE_MESSAGE_LIMIT} mensajes gratuitos.
+            </p>
+            <p className="text-sm text-zinc-500 mb-6">
+              Desbloquea mensajes ilimitados con todos tus matches por solo:
+            </p>
+
+            <div className="bg-zinc-50 rounded-2xl p-4 mb-6 border border-zinc-200">
+              <p className="text-3xl font-black text-zinc-900">9,99€<span className="text-base font-normal text-zinc-500">/mes</span></p>
+              <div className="mt-3 space-y-1.5 text-left">
+                <p className="text-xs text-zinc-600">✅ Mensajes ilimitados con todos tus matches</p>
+                <p className="text-xs text-zinc-600">✅ Ver quién ha visitado tu perfil</p>
+                <p className="text-xs text-zinc-600">✅ Prioridad en el feed de otros usuarios</p>
+                <p className="text-xs text-zinc-600">✅ Badge "Verificado" en tu perfil</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                showToast('Próximamente — sistema de pago en desarrollo')
+                setShowPaywall(false)
+              }}
+              className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-2xl hover:from-amber-600 hover:to-orange-600 transition-all text-sm"
+            >
+              Desbloquear ahora →
+            </button>
+
+            <button
+              onClick={() => setShowPaywall(false)}
+              className="w-full py-2 text-sm text-zinc-400 hover:text-zinc-600 mt-3"
+            >
+              Ahora no
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Report Modal */}
       {showReportModal && (
