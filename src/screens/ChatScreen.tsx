@@ -13,36 +13,62 @@ const FREE_MESSAGE_LIMIT = 3
 const PLANS = [
   {
     id: 'single',
-    name: 'Single Match',
+    name: '1 Match',
     price: '4,99€',
-    desc: 'Chat ilimitado con 1 match',
+    priceNote: 'pago único',
+    desc: 'Desbloquea el chat con este co-founder',
+    bullet: '✓ Chat ilimitado con 1 persona',
     priceId: 'price_1TMOBHU8xknUjRYeCsgbwze',
   },
   {
     id: 'pack3',
-    name: 'Pack 3 Matches',
+    name: '3 Matches',
     price: '12,99€',
-    desc: 'Chat ilimitado con 3 matches',
+    priceNote: '4,33€ por match',
+    desc: 'Conecta con tus 3 mejores matches',
+    bullet: '✓ Chat ilimitado con 3 personas',
     priceId: 'price_1TMBOrHU8xknUjRYb97ATzmD',
+    popular: true,
   },
   {
     id: 'monthly',
-    name: 'Pro Monthly',
-    price: '16,99€/mes',
-    desc: 'Chat ilimitado con todos tus matches',
+    name: 'Pro',
+    price: '16,99€',
+    priceNote: '/mes · cancela cuando quieras',
+    desc: 'Para fundadores que buscan activamente',
+    bullet: '✓ Chat ilimitado con todos · Prioridad en el feed',
     priceId: 'price_1TMBPTHU8xknUjRYUNwtvgTm',
   },
   {
     id: 'yearly',
-    name: 'Pro Yearly',
-    price: '149€/año',
-    desc: 'Todo ilimitado — ahorra 27%',
+    name: 'Pro Anual',
+    price: '149€',
+    priceNote: '/año — 12,42€/mes',
+    desc: 'El mejor precio para encontrar a tu co-founder',
+    bullet: '✓ Todo ilimitado · 2 meses gratis',
     priceId: 'price_1TMBQCHU8xknUjRYcA3FnSYQ',
+    savings: 'Ahorra 55€',
   },
 ]
 
 const SUPABASE_FUNCTION_URL = 'https://eocfuhidteqlatkxhrac.supabase.co/functions/v1/clever-handler'
 const SUPABASE_ANON_KEY = 'sb_publishable_NOfzEoKGisEUEOAwSMbRMA_O2Gdjb8d'
+
+// Analytics: log paywall events to Supabase
+// Table: paywall_events (id uuid PK, profile_id text, event text, metadata jsonb, created_at timestamptz)
+// If the table doesn't exist yet, events silently fail — no impact on UX
+async function logPaywallEvent(profileId: string | null, event: string, metadata?: Record<string, any>) {
+  if (!profileId) return
+  try {
+    await supabase.from('paywall_events').insert({
+      profile_id: profileId,
+      event,
+      metadata: metadata || {},
+    })
+  } catch {
+    // Silent fail — analytics should never break the app
+  }
+}
 
 interface Props {
   connectionId: string
@@ -69,11 +95,14 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
   const [isPremium, setIsPremium] = useState(false)
   const [loadingCheckout, setLoadingCheckout] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [paymentProcessing, setPaymentProcessing] = useState(false)
+  const [paymentStep, setPaymentStep] = useState(0) // 0-3 animated steps
+  const [showUnlockedModal, setShowUnlockedModal] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const showToast = (msg: string) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 2500)
+    setTimeout(() => setToast(null), 3000)
   }
 
   const loadMessages = async () => {
@@ -110,31 +139,55 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     }
   }
 
-  // Show toast if just returned from payment
+  // Payment return flow — animated processing + celebration
   useEffect(() => {
-    if (paymentJustCompleted) {
-      showToast('Pago procesado. Verificando...')
-      // Poll for premium status (webhook may take a few seconds)
-      let attempts = 0
-      const pollInterval = setInterval(async () => {
-        attempts++
-        const { data } = await supabase
-          .from('profiles')
-          .select('is_premium')
-          .eq('id', myProfileId)
-          .single()
+    if (!paymentJustCompleted) return
 
-        if (data?.is_premium) {
-          setIsPremium(true)
-          showToast('¡Chat ilimitado desbloqueado!')
-          clearInterval(pollInterval)
-        } else if (attempts >= 10) {
-          showToast('El pago se está procesando. Puede tardar unos minutos.')
-          clearInterval(pollInterval)
-        }
-      }, 3000)
+    setPaymentProcessing(true)
+    setPaymentStep(0)
+    logPaywallEvent(myProfileId, 'payment_return')
 
-      return () => clearInterval(pollInterval)
+    // Animate through steps
+    const stepTimers = [
+      setTimeout(() => setPaymentStep(1), 1200),
+      setTimeout(() => setPaymentStep(2), 2800),
+    ]
+
+    // Poll for premium status
+    let attempts = 0
+    const pollInterval = setInterval(async () => {
+      attempts++
+      const { data } = await supabase
+        .from('profiles')
+        .select('is_premium')
+        .eq('id', myProfileId)
+        .single()
+
+      if (data?.is_premium) {
+        setIsPremium(true)
+        setPaymentStep(3)
+        logPaywallEvent(myProfileId, 'payment_confirmed')
+
+        // Short delay then show celebration modal
+        setTimeout(() => {
+          setPaymentProcessing(false)
+          setShowUnlockedModal(true)
+          loadMessages() // Refresh chat
+        }, 1000)
+
+        clearInterval(pollInterval)
+      } else if (attempts >= 15) {
+        setPaymentProcessing(false)
+        setPaymentStep(0)
+        showToast('Tu pago se está confirmando. Recarga la página en un momento.')
+        logPaywallEvent(myProfileId, 'payment_timeout')
+        clearInterval(pollInterval)
+      }
+    }, 2000)
+
+    return () => {
+      stepTimers.forEach(clearTimeout)
+      clearInterval(pollInterval)
     }
   }, [paymentJustCompleted, myProfileId])
 
@@ -177,6 +230,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
 
     if (isOverLimit) {
       setShowPaywall(true)
+      logPaywallEvent(myProfileId, 'paywall_hit_send')
       return
     }
 
@@ -234,8 +288,15 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
     }, 1500)
   }
 
-  const handleCheckout = async (priceId: string) => {
+  const handleOpenPaywall = () => {
+    setShowPaywall(true)
+    logPaywallEvent(myProfileId, 'paywall_opened')
+  }
+
+  const handleCheckout = async (priceId: string, planId: string) => {
     setLoadingCheckout(true)
+    logPaywallEvent(myProfileId, 'checkout_started', { plan: planId })
+
     try {
       const res = await fetch(SUPABASE_FUNCTION_URL, {
         method: 'POST',
@@ -253,12 +314,15 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
       const data = await res.json()
 
       if (data.url) {
+        logPaywallEvent(myProfileId, 'checkout_redirected', { plan: planId })
         window.location.href = data.url
       } else {
         showToast('Error al crear el pago. Inténtalo de nuevo.')
+        logPaywallEvent(myProfileId, 'checkout_error', { plan: planId, error: 'no_url' })
       }
     } catch (err) {
       showToast('Error de conexión. Inténtalo de nuevo.')
+      logPaywallEvent(myProfileId, 'checkout_error', { plan: planId, error: 'network' })
     }
     setLoadingCheckout(false)
   }
@@ -266,6 +330,62 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const PROCESSING_STEPS = [
+    { icon: '🔄', text: 'Conectando con el banco…' },
+    { icon: '✅', text: 'Pago recibido correctamente' },
+    { icon: '🔓', text: 'Activando tu cuenta…' },
+    { icon: '🎉', text: '¡Todo listo!' },
+  ]
+
+  // Payment processing overlay
+  if (paymentProcessing) {
+    return (
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-3xl max-w-sm w-full p-8 text-center shadow-xl">
+          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-amber-100 to-orange-100 rounded-full flex items-center justify-center">
+            <span className="text-4xl animate-pulse">
+              {PROCESSING_STEPS[Math.min(paymentStep, 3)].icon}
+            </span>
+          </div>
+
+          <h3 className="text-xl font-bold text-zinc-900 mb-6">Procesando tu pago</h3>
+
+          <div className="space-y-3 text-left mb-6">
+            {PROCESSING_STEPS.map((step, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3 transition-all duration-500 ${
+                  i <= paymentStep ? 'opacity-100' : 'opacity-30'
+                }`}
+              >
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${
+                  i < paymentStep
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : i === paymentStep
+                    ? 'bg-amber-100 text-amber-600'
+                    : 'bg-zinc-100 text-zinc-400'
+                }`}>
+                  {i < paymentStep ? '✓' : i === paymentStep ? (
+                    <span className="animate-spin inline-block w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full" />
+                  ) : '·'}
+                </div>
+                <p className={`text-sm ${
+                  i <= paymentStep ? 'text-zinc-700 font-medium' : 'text-zinc-400'
+                }`}>
+                  {step.text}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-zinc-400">
+            Esto suele tardar unos segundos. No cierres esta página.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -389,8 +509,8 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
             </p>
           ) : isOverLimit ? (
             <button
-              onClick={() => setShowPaywall(true)}
-              className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold rounded-2xl hover:from-amber-600 hover:to-orange-600 transition-all"
+              onClick={handleOpenPaywall}
+              className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold rounded-2xl hover:from-amber-600 hover:to-orange-600 transition-all active:scale-[0.98]"
             >
               🔓 Desbloquear chat ilimitado
             </button>
@@ -416,55 +536,67 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
         </div>
       </div>
 
-      {/* Paywall Modal */}
+      {/* ── Paywall Modal (redesigned) ── */}
       {showPaywall && (
-        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-end sm:items-center justify-center">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-sm w-full p-6 max-h-[92vh] overflow-y-auto animate-slide-up">
+
+            {/* Header */}
             <div className="text-center mb-5">
               <div className="w-16 h-16 mx-auto mb-3 bg-gradient-to-br from-amber-100 to-orange-100 rounded-2xl flex items-center justify-center">
                 <span className="text-4xl">💎</span>
               </div>
-              <h3 className="text-xl font-bold text-zinc-900">Desbloquea el chat</h3>
-              <p className="text-sm text-zinc-500 mt-1">
-                Has usado tus {FREE_MESSAGE_LIMIT} mensajes gratuitos
+              <h3 className="text-xl font-bold text-zinc-900">
+                No pierdas esta conexión
+              </h3>
+              <p className="text-sm text-zinc-500 mt-2 leading-relaxed">
+                Has usado tus {FREE_MESSAGE_LIMIT} mensajes gratis.<br/>
+                <span className="font-medium text-zinc-700">{otherName}</span> ya está en tu red — desbloquea el chat para seguir conversando.
               </p>
             </div>
 
-            <div className="space-y-3 mb-5">
+            {/* Plans */}
+            <div className="space-y-2.5 mb-5">
               {PLANS.map(plan => (
                 <button
                   key={plan.id}
-                  onClick={() => handleCheckout(plan.priceId)}
+                  onClick={() => handleCheckout(plan.priceId, plan.id)}
                   disabled={loadingCheckout}
-                  className={`w-full p-4 rounded-2xl border-2 text-left transition-all hover:shadow-md disabled:opacity-60 ${
-                    plan.id === 'pack3'
-                      ? 'border-amber-400 bg-amber-50'
+                  className={`w-full p-4 rounded-2xl border-2 text-left transition-all hover:shadow-md disabled:opacity-60 relative ${
+                    plan.popular
+                      ? 'border-amber-400 bg-amber-50 shadow-sm'
                       : 'border-zinc-200 bg-white hover:border-zinc-300'
                   }`}
                 >
+                  {/* Popular badge */}
+                  {plan.popular && (
+                    <span className="absolute -top-2.5 left-4 px-2.5 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-white">
+                      ⭐ Más popular
+                    </span>
+                  )}
+                  {/* Savings badge */}
+                  {plan.savings && (
+                    <span className="absolute -top-2.5 left-4 px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-500 text-white">
+                      {plan.savings}
+                    </span>
+                  )}
+
                   <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-zinc-900">{plan.name}</p>
-                        {plan.id === 'pack3' && (
-                          <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-white">
-                            ⭐ Popular
-                          </span>
-                        )}
-                        {plan.id === 'yearly' && (
-                          <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-emerald-500 text-white">
-                            -27%
-                          </span>
-                        )}
-                      </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-zinc-900">{plan.name}</p>
                       <p className="text-xs text-zinc-500 mt-0.5">{plan.desc}</p>
+                      <p className="text-xs text-emerald-600 mt-1 font-medium">{plan.bullet}</p>
                     </div>
-                    <p className="text-lg font-black text-zinc-900">{plan.price}</p>
+                    <div className="text-right ml-3 flex-shrink-0">
+                      <p className="text-lg font-black text-zinc-900">{plan.price}</p>
+                      <p className="text-xs text-zinc-400">{plan.priceNote}</p>
+                    </div>
                   </div>
                 </button>
               ))}
             </div>
 
+            {/* Loading checkout */}
             {loadingCheckout && (
               <div className="text-center py-2 mb-3">
                 <div className="w-6 h-6 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto"/>
@@ -472,17 +604,47 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
               </div>
             )}
 
+            {/* Footer */}
             <div className="text-center">
               <button
-                onClick={() => setShowPaywall(false)}
+                onClick={() => {
+                  setShowPaywall(false)
+                  logPaywallEvent(myProfileId, 'paywall_dismissed')
+                }}
                 className="text-sm text-zinc-400 hover:text-zinc-600"
               >
                 Ahora no
               </button>
               <p className="text-xs text-zinc-300 mt-3">
-                Pago seguro con Stripe 🔒
+                Pago seguro con Stripe 🔒 · Cancelación fácil
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Unlocked Celebration Modal ── */}
+      {showUnlockedModal && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-8 text-center">
+            <div className="w-20 h-20 mx-auto mb-5 bg-emerald-100 rounded-full flex items-center justify-center">
+              <span className="text-5xl">🎉</span>
+            </div>
+            <h3 className="text-2xl font-bold text-zinc-900 mb-2">
+              ¡Ya tienes chat ilimitado!
+            </h3>
+            <p className="text-zinc-500 leading-relaxed mb-8">
+              Tu suscripción está activa. Ahora puedes chatear sin límites con {otherName} y con todos tus matches.
+            </p>
+            <button
+              onClick={() => {
+                setShowUnlockedModal(false)
+                loadMessages()
+              }}
+              className="w-full py-4 bg-emerald-600 text-white font-semibold rounded-2xl hover:bg-emerald-700 transition-all active:scale-[0.98]"
+            >
+              Seguir chateando →
+            </button>
           </div>
         </div>
       )}
@@ -534,10 +696,28 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
       )}
 
       {toast && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white text-sm px-6 py-3 rounded-2xl shadow-xl">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white text-sm px-6 py-3 rounded-2xl shadow-xl animate-fade-in">
           {toast}
         </div>
       )}
+
+      {/* Inline CSS for animations */}
+      <style>{`
+        @keyframes slide-up {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up {
+          animation: slide-up 0.3s ease-out;
+        }
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.25s ease-out;
+        }
+      `}</style>
     </div>
   )
 }
