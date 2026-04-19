@@ -1,49 +1,63 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { FounderType } from '../data/mockProfiles'
+import { fetchGitHubData, GitHubData } from '../lib/github'
 
-const TYPES: { value: FounderType; label: string; desc: string }[] = [
-  { value: 'Hacker',  label: 'Hacker',  desc: 'Construyo · Dev, diseño, producto' },
-  { value: 'Hustler', label: 'Hustler', desc: 'Vendo · Ventas, marketing, growth' },
-  { value: 'Money',   label: 'Money',   desc: 'Invierto · Capital, red, financiación' },
-  { value: 'Legal',   label: 'Legal',   desc: 'Asesoro · Legal, cumplimiento, contratos' },
+const TYPES: { value: FounderType; label: string; desc: string; color: string }[] = [
+  { value: 'Hacker',  label: 'Hacker',  desc: 'Dev, diseño, producto',    color: 'border-blue-400 bg-blue-50' },
+  { value: 'Hustler', label: 'Hustler', desc: 'Ventas, marketing, growth', color: 'border-emerald-400 bg-emerald-50' },
+  { value: 'Money',   label: 'Money',   desc: 'Capital, red, financiación', color: 'border-amber-400 bg-amber-50' },
+  { value: 'Legal',   label: 'Legal',   desc: 'Legal, contratos, cumplimiento', color: 'border-rose-400 bg-rose-50' },
 ]
 
-const TYPE_STYLES: Record<FounderType, string> = {
-  Hacker:  'border-blue-400 bg-blue-50',
-  Hustler: 'border-emerald-400 bg-emerald-50',
-  Money:   'border-amber-400 bg-amber-50',
-  Legal:   'border-rose-400 bg-rose-50',
-}
+const LINKEDIN_REGEX = /linkedin\.com\/in\//i
 
 interface Props {
   userId: string | null
+  isGithubRedirect?: boolean
   onComplete: (profileId: string | null, founderType: FounderType | null) => void
 }
 
-export function OnboardingScreen({ userId, onComplete }: Props) {
-  const [fullName,     setFullName]     = useState('')
-  const [founderType,  setFounderType]  = useState<FounderType | null>(null)
-  const [bio,          setBio]          = useState('')
-  const [aporta,       setAporta]       = useState('')
-  const [busca,        setBusca]        = useState('')
-  const [github,       setGithub]       = useState('')
-  const [linkedin,     setLinkedin]     = useState('')
-  const [loading,      setLoading]      = useState(false)
-  const [error,        setError]        = useState<string | null>(null)
-  const [avatarFile,   setAvatarFile]   = useState<File | null>(null)
+export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props) {
+  const isGuest = !userId
+
+  const [fullName,      setFullName]      = useState('')
+  const [founderType,   setFounderType]   = useState<FounderType | null>(null)
+  const [bio,           setBio]           = useState('')
+  const [aporta,        setAporta]        = useState('')
+  const [busca,         setBusca]         = useState('')
+  const [github,        setGithub]        = useState('')
+  const [linkedin,      setLinkedin]      = useState('')
+  const [linkedinError, setLinkedinError] = useState<string | null>(null)
+  const [loading,       setLoading]       = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [avatarFile,    setAvatarFile]    = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const [githubData,    setGithubData]    = useState<GitHubData | null>(null)
+  const [githubLoading, setGithubLoading] = useState(false)
+  const [showExtras,    setShowExtras]    = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Capture provider_token immediately after GitHub OAuth redirect
+  useEffect(() => {
+    if (!isGithubRedirect || isGuest) return
+    setGithubLoading(true)
+    setShowExtras(true)
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.provider_token) {
+        const data = await fetchGitHubData(session.provider_token)
+        if (data) setGithubData(data)
+      }
+      setGithubLoading(false)
+    })
+  }, [isGithubRedirect, isGuest])
 
   const canSubmit = fullName.trim() && founderType && bio.trim()
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      setError('La imagen debe pesar menos de 2MB')
-      return
-    }
+    if (file.size > 2 * 1024 * 1024) { setError('La imagen debe pesar menos de 2MB'); return }
     setAvatarFile(file)
     setAvatarPreview(URL.createObjectURL(file))
   }
@@ -52,20 +66,28 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
     if (!avatarFile) return null
     const ext = avatarFile.name.split('.').pop()
     const path = `${profileId}.${ext}`
-
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, avatarFile, { upsert: true })
-
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, avatarFile, { upsert: true })
     if (uploadError) return null
-
     const { data } = supabase.storage.from('avatars').getPublicUrl(path)
     return data.publicUrl
+  }
+
+  const handleLinkGitHub = () => {
+    supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: window.location.origin + '/onboarding?github=linked' },
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canSubmit) return
+
+    if (linkedin.trim() && !LINKEDIN_REGEX.test(linkedin)) {
+      setLinkedinError('URL no válida. Ej: linkedin.com/in/tu-nombre')
+      return
+    }
+    setLinkedinError(null)
     setLoading(true)
     setError(null)
 
@@ -77,25 +99,23 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
       skills:       aporta.trim() ? [{ label: aporta.trim(), cat: 'biz' }] : [],
     }
     if (userId) row.user_id = userId
-    if (github.trim()) row.github_username = github.trim()
-    if (linkedin.trim()) row.linkedin_url = linkedin.trim()
+    if (isGuest && github.trim()) row.github_username = github.trim()
+    if (!isGuest && githubData) {
+      row.github_username = githubData.username
+      row.github_verified = true
+      row.github_data = githubData
+    }
+    if (linkedin.trim()) {
+      row.linkedin_url = linkedin.trim()
+      row.linkedin_verified = 'url_provided'
+    }
 
-    const { data, error: err } = await supabase
-      .from('profiles')
-      .insert(row)
-      .select('id')
-      .single()
-
+    const { data, error: err } = await supabase.from('profiles').insert(row).select('id').single()
     if (err) { setLoading(false); setError(err.message); return }
 
     if (data?.id && avatarFile) {
       const avatarUrl = await uploadAvatar(data.id)
-      if (avatarUrl) {
-        await supabase
-          .from('profiles')
-          .update({ avatar_url: avatarUrl })
-          .eq('id', data.id)
-      }
+      if (avatarUrl) await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', data.id)
     }
 
     setLoading(false)
@@ -106,61 +126,44 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
 
+        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black text-zinc-900 tracking-tight mb-1">equity</h1>
-          <p className="text-zinc-500 text-sm">Cuéntanos quién eres · 1 minuto</p>
+          <p className="text-zinc-500 text-sm">Cuéntanos quién eres · menos de 1 minuto</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
 
-          {/* Avatar */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex flex-col items-center">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-3 self-start">
-              Foto de perfil
-            </label>
+          {/* Avatar + Nombre — en una fila */}
+          <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex items-center gap-4">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="w-24 h-24 rounded-3xl bg-zinc-100 flex items-center justify-center cursor-pointer hover:bg-zinc-200 transition-colors overflow-hidden border-2 border-dashed border-zinc-300"
+              className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center cursor-pointer hover:bg-zinc-200 transition-colors overflow-hidden border-2 border-dashed border-zinc-300 shrink-0"
             >
-              {avatarPreview ? (
-                <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
-              ) : (
-                <div className="text-center">
-                  <span className="text-3xl">📷</span>
-                  <p className="text-xs text-zinc-400 mt-1">Subir</p>
-                </div>
-              )}
+              {avatarPreview
+                ? <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                : <span className="text-2xl">📷</span>
+              }
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-            />
-            <p className="text-xs text-zinc-400 mt-2">Opcional · Máx 2MB</p>
-          </div>
-
-          {/* Nombre */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-4">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-2">
-              Nombre completo
-            </label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={e => setFullName(e.target.value)}
-              placeholder="Tu nombre y apellido"
-              required
-              autoFocus
-              className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Nombre</label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                placeholder="Tu nombre y apellido"
+                required
+                autoFocus
+                className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+              />
+            </div>
           </div>
 
           {/* Tipo de founder */}
           <div className="bg-white rounded-2xl border border-zinc-200 p-4">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-3">
-              Soy principalmente un…
+              Soy principalmente…
             </label>
             <div className="grid grid-cols-2 gap-2">
               {TYPES.map(t => (
@@ -168,13 +171,9 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
                   key={t.value}
                   type="button"
                   onClick={() => setFounderType(t.value)}
-                  className={`
-                    p-3 rounded-xl border-2 text-left transition-all duration-150
-                    ${founderType === t.value
-                      ? TYPE_STYLES[t.value]
-                      : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100'
-                    }
-                  `}
+                  className={`p-3 rounded-xl border-2 text-left transition-all duration-150 ${
+                    founderType === t.value ? t.color : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100'
+                  }`}
                 >
                   <p className="text-sm font-bold text-zinc-900">{t.label}</p>
                   <p className="text-xs text-zinc-500 mt-0.5 leading-tight">{t.desc}</p>
@@ -186,90 +185,135 @@ export function OnboardingScreen({ userId, onComplete }: Props) {
           {/* Bio */}
           <div className="bg-white rounded-2xl border border-zinc-200 p-4">
             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-2">
-              Tu prueba de trabajo · ¿qué has construido?
+              ¿Qué has construido? <span className="text-zinc-400 font-normal normal-case">(tu prueba de trabajo)</span>
             </label>
             <textarea
               value={bio}
               onChange={e => setBio(e.target.value)}
-              placeholder="ej. Llevo 3 años construyendo SaaS B2B. Tengo un producto con 200 clientes activos y busco socio comercial."
+              placeholder="ej. Llevo 3 años construyendo SaaS B2B con 200 clientes activos. Busco socio comercial para escalar."
               rows={3}
               required
               className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all resize-none"
             />
           </div>
 
-          {/* Aporta */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-4">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-2">
-              ¿Qué aportas al proyecto?
-            </label>
-            <input
-              type="text"
-              value={aporta}
-              onChange={e => setAporta(e.target.value)}
-              placeholder="ej. Código, producto, red de inversores, ventas enterprise…"
-              className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-            />
-          </div>
-
-          {/* Busca */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-4">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-2">
-              ¿Qué buscas en un socio?
-            </label>
-            <input
-              type="text"
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              placeholder="ej. Dev fullstack, capital pre-seed, perfil legal, ventas B2B…"
-              className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-            />
-          </div>
-
-          {/* GitHub & LinkedIn */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-4">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-3">
-              Verificación (opcional)
-            </label>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🐙</span>
-                <input
-                  type="text"
-                  value={github}
-                  onChange={e => setGithub(e.target.value)}
-                  placeholder="Tu usuario de GitHub"
-                  className="flex-1 px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-                />
+          {/* Detalles opcionales — colapsable */}
+          <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowExtras(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-zinc-50 transition-colors"
+            >
+              <div>
+                <span className="text-sm font-semibold text-zinc-700">Añadir detalles</span>
+                <span className="text-xs text-zinc-400 ml-2">skills, LinkedIn, GitHub (opcional)</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg">💼</span>
-                <input
-                  type="text"
-                  value={linkedin}
-                  onChange={e => setLinkedin(e.target.value)}
-                  placeholder="URL de tu perfil de LinkedIn"
-                  className="flex-1 px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-                />
+              <span className={`text-zinc-400 transition-transform duration-200 ${showExtras ? 'rotate-180' : ''}`}>
+                ↓
+              </span>
+            </button>
+
+            {showExtras && (
+              <div className="border-t border-zinc-100 p-4 space-y-3">
+                {/* Aporta */}
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">¿Qué aportas?</label>
+                  <input
+                    type="text"
+                    value={aporta}
+                    onChange={e => setAporta(e.target.value)}
+                    placeholder="ej. Código, red de inversores, ventas enterprise…"
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                  />
+                </div>
+
+                {/* Busca */}
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">¿Qué buscas en un socio?</label>
+                  <input
+                    type="text"
+                    value={busca}
+                    onChange={e => setBusca(e.target.value)}
+                    placeholder="ej. Dev fullstack, capital pre-seed, perfil legal…"
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                  />
+                </div>
+
+                {/* GitHub */}
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">GitHub</label>
+                  {isGuest ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🐙</span>
+                      <input
+                        type="text"
+                        value={github}
+                        onChange={e => setGithub(e.target.value)}
+                        placeholder="Tu usuario de GitHub"
+                        className="flex-1 px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                      />
+                    </div>
+                  ) : githubLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50">
+                      <span className="text-base">🐙</span>
+                      <span className="text-sm text-zinc-400">Verificando…</span>
+                      <div className="ml-auto w-4 h-4 border-2 border-zinc-300 border-t-zinc-600 rounded-full animate-spin" />
+                    </div>
+                  ) : githubData ? (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50">
+                      <span className="text-base">🐙</span>
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-800">✓ @{githubData.username}</p>
+                        <p className="text-xs text-emerald-600">{githubData.repos} repos · {githubData.total_stars} ⭐ · desde {githubData.account_created}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleLinkGitHub}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 transition-colors text-sm text-zinc-700 font-medium"
+                    >
+                      <span className="text-base">🐙</span>
+                      <span>Verificar con GitHub →</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* LinkedIn */}
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">LinkedIn</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">💼</span>
+                    <input
+                      type="text"
+                      value={linkedin}
+                      onChange={e => { setLinkedin(e.target.value); setLinkedinError(null) }}
+                      placeholder="linkedin.com/in/tu-nombre"
+                      className={`flex-1 px-3 py-2 rounded-xl border bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
+                        linkedinError ? 'border-red-300 focus:ring-red-400' : 'border-zinc-200 focus:ring-zinc-900'
+                      }`}
+                    />
+                  </div>
+                  {linkedinError && <p className="text-xs text-red-500 mt-1 pl-7">{linkedinError}</p>}
+                </div>
+
+                <p className="text-xs text-zinc-400">Los enlaces solo se muestran a conexiones aceptadas</p>
               </div>
-              <p className="text-xs text-zinc-400">Los enlaces solo se mostrarán a tus conexiones aceptadas</p>
-            </div>
+            )}
           </div>
 
           {error && (
-            <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2 border border-red-100">
-              {error}
-            </p>
+            <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2 border border-red-100">{error}</p>
           )}
 
           <button
             type="submit"
             disabled={!canSubmit || loading}
-            className="w-full py-3.5 rounded-xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 active:scale-[.99] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            className="w-full py-4 rounded-2xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 active:scale-[.99] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             {loading
               ? <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Guardando…
                 </span>
               : 'Ir al feed →'

@@ -33,6 +33,23 @@ interface Props {
   onOpenMyProfile: () => void
 }
 
+// Lista negra de nombres claramente de prueba
+const BLACKLIST_NAMES = new Set([
+  'aa', 'aaa', 'aaaa', 'hh', 'dd', 'ff', 'gg', 'xx', 'zz',
+  'loco', 'prueba', 'test', 'testing', 'asdf', 'qwer', 'pepe lopez',
+  'amazon undertaker',
+])
+
+function isValidProfile(row: any): boolean {
+  const name = (row.full_name || '').trim().toLowerCase()
+  if (!name || name.length < 3) return false
+  if (BLACKLIST_NAMES.has(name)) return false
+  if (/^(.)\1+$/.test(name.replace(/\s/g, ''))) return false
+  const bio = (row.bio || '').trim()
+  if (bio.length < 30) return false
+  return true
+}
+
 function toMockProfile(row: any): MockProfile {
   const founderType: FounderType = ['Hacker', 'Hustler', 'Money', 'Legal'].includes(row.founder_type)
     ? row.founder_type
@@ -135,6 +152,7 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnec
         const realProfiles = data
           .filter(row => row.id !== myProfileId)
           .filter(row => !mockIds.has(row.id))
+          .filter(isValidProfile)
           .map(toMockProfile)
 
         setAllProfiles([...MOCK_PROFILES, ...realProfiles])
@@ -196,35 +214,42 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnec
   return (
     <div className="min-h-screen bg-zinc-50 pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-zinc-100">
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-black tracking-tighter text-zinc-900">equity</h1>
-            <p className="text-xs text-zinc-500 -mt-1">matching para co-founders</p>
+      <header className="sticky top-0 z-50 bg-white border-b border-zinc-100 shadow-sm">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-2xl font-black tracking-tighter text-zinc-900 leading-tight">equity</h1>
+              <p className="text-xs text-zinc-400 leading-tight">co-founder matching</p>
+            </div>
+            {myFounderType && (
+              <span className={`hidden sm:inline-flex px-3 py-1 text-xs font-semibold rounded-full ${tagStyle}`}>
+                {myFounderType}
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            {/* My Profile button */}
+          <div className="flex items-center gap-1.5">
             <button
               onClick={onOpenMyProfile}
-              className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition-colors text-lg"
+              className="w-9 h-9 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition-colors"
+              title="Mi perfil"
             >
-              👤
+              <span className="text-base">👤</span>
             </button>
-            {/* Connections button */}
             <button
               onClick={onOpenConnections}
-              className="relative w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition-colors text-lg"
+              className="relative w-9 h-9 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition-colors"
+              title="Conexiones"
             >
-              💬
+              <span className="text-base">💬</span>
               {pendingCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold leading-none">
                   {pendingCount}
                 </span>
               )}
             </button>
             <button
               onClick={handleSignOut}
-              className="text-sm text-zinc-400 hover:text-zinc-600 px-3 py-1 rounded-lg hover:bg-zinc-100 transition-colors"
+              className="text-xs text-zinc-400 hover:text-zinc-600 px-2.5 py-1.5 rounded-lg hover:bg-zinc-100 transition-colors ml-1"
             >
               Salir
             </button>
@@ -232,14 +257,14 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnec
         </div>
 
         {/* Filtros */}
-        <div className="max-w-lg mx-auto px-4 pb-4 flex gap-2 overflow-x-auto scrollbar-hide">
+        <div className="max-w-lg mx-auto px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
           {FILTERS.map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                filter === f 
-                  ? 'bg-zinc-900 text-white shadow-sm' 
+              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                filter === f
+                  ? 'bg-zinc-900 text-white shadow-sm'
                   : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
               }`}
             >
@@ -250,41 +275,44 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnec
       </header>
 
       <main className="max-w-lg mx-auto px-4 pt-4">
-        <div className="mb-6 px-1">
-          <div className="inline-flex items-center gap-2 bg-white rounded-full px-4 py-1 border border-zinc-100">
-            <span className="text-xs text-zinc-500">Tu perfil:</span>
-            <span className={`px-3 py-0.5 text-xs font-semibold rounded-full ${tagStyle}`}>
-              {myFounderType ?? 'Sin definir'}
-            </span>
-            <span className="text-xs text-zinc-400">→ viendo complementarios</span>
+        {myFounderType && (
+          <div className="mb-5 px-1">
+            <div className="inline-flex items-center gap-2 bg-white rounded-full px-3 py-1.5 border border-zinc-100 shadow-sm">
+              <span className={`w-2 h-2 rounded-full ${tagStyle.split(' ')[0]}`} />
+              <span className="text-xs text-zinc-500">
+                Viendo perfiles complementarios a <span className="font-semibold text-zinc-700">{myFounderType}</span>
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {loadingProfiles ? (
-          <div className="text-center py-20">
+          <div className="text-center py-24">
             <div className="w-8 h-8 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-3"/>
-            <p className="text-zinc-400 text-sm">Cargando perfiles…</p>
+            <p className="text-zinc-400 text-sm">Buscando los mejores matches…</p>
           </div>
         ) : sortedVisible.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-zinc-400">Has visto todos los perfiles por ahora.</p>
-            <button 
+          <div className="text-center py-24">
+            <div className="w-16 h-16 mx-auto mb-4 bg-zinc-100 rounded-2xl flex items-center justify-center text-3xl">🔍</div>
+            <p className="text-zinc-700 font-semibold">Has visto todos los perfiles</p>
+            <p className="text-zinc-400 text-sm mt-1 mb-5">Vuelve pronto, se añaden nuevos fundadores cada semana</p>
+            <button
               onClick={() => setPassed(new Set())}
-              className="mt-4 text-sm underline text-zinc-500 hover:text-zinc-700"
+              className="px-5 py-2.5 text-sm font-medium bg-zinc-900 text-white rounded-2xl hover:bg-black transition-colors"
             >
               Ver perfiles descartados de nuevo
             </button>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {sortedVisible.map(profile => (
-              <ProfileCard 
-                key={profile.id} 
+              <ProfileCard
+                key={profile.id}
                 profile={profile}
                 matchScore={matchResults[profile.id]?.score || 0}
                 matchExplanation={matchResults[profile.id]?.explanation || ''}
-                onOpen={setDetail} 
-                onPass={handlePass} 
+                onOpen={setDetail}
+                onPass={handlePass}
               />
             ))}
           </div>

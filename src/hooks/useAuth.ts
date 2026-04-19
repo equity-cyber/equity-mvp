@@ -41,5 +41,11 @@ export function useAuth() {
 
   const signOut = () => supabase.auth.signOut()
 
-  return { user, loading, signUp, signIn, resetPassword, signOut }
+  const linkGitHub = () =>
+    supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: window.location.origin + '/onboarding?github=linked' },
+    })
+
+  return { user, loading, signUp, signIn, resetPassword, signOut, linkGitHub }
 }

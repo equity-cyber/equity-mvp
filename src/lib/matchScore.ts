@@ -22,50 +22,60 @@ interface MatchResult {
 function getTypeScore(a: FounderType, b: FounderType): number {
   const key = [a, b].sort().join('+')
   const scores: Record<string, [number, number]> = {
-    'Hacker+Hustler': [92, 97],
-    'Hacker+Legal':   [88, 94],
-    'Hacker+Money':   [75, 85],
-    'Hustler+Money':  [85, 92],
-    'Hustler+Legal':  [70, 80],
-    'Legal+Money':    [78, 88],
-    'Hacker+Hacker':  [45, 60],
-    'Hustler+Hustler':[45, 60],
-    'Legal+Legal':    [45, 60],
-    'Money+Money':    [45, 60],
+    'Hacker+Hustler': [88, 95],
+    'Hacker+Legal':   [82, 90],
+    'Hacker+Money':   [72, 82],
+    'Hustler+Money':  [82, 90],
+    'Hustler+Legal':  [68, 78],
+    'Legal+Money':    [75, 85],
+    'Hacker+Hacker':  [42, 58],
+    'Hustler+Hustler':[42, 58],
+    'Legal+Legal':    [42, 58],
+    'Money+Money':    [42, 58],
   }
   const range = scores[key] || [50, 65]
-  // Deterministic "random" based on names to keep it stable
   return range[0] + Math.floor((range[1] - range[0]) * 0.6)
 }
 
-// Check if seeking matches what the other offers
-function getSeekingBonus(myProfile: MatchProfile, otherProfile: MatchProfile): number {
-  const otherSkills = otherProfile.skills.map(s => s.label.toLowerCase()).join(' ')
+// Coincidencias concretas entre lo que YO busco y lo que el OTRO ofrece
+function findSkillMatches(myProfile: MatchProfile, otherProfile: MatchProfile): string[] {
+  const otherSkillLabels = otherProfile.skills.map(s => s.label)
+  const otherSkillsLower = otherSkillLabels.map(s => s.toLowerCase())
   const otherBio = otherProfile.bio.toLowerCase()
-  const otherType = otherProfile.founder_type.toLowerCase()
-  const combined = `${otherSkills} ${otherBio} ${otherType}`
+  const matches: string[] = []
 
-  let bonus = 0
   for (const seek of myProfile.seeking) {
-    const words = seek.toLowerCase().split(/\s+/)
-    for (const word of words) {
-      if (word.length > 3 && combined.includes(word)) {
-        bonus = 8
-        break
-      }
+    const seekLower = seek.toLowerCase()
+    // Match directo con skill
+    const direct = otherSkillLabels.find(s => s.toLowerCase() === seekLower)
+    if (direct) { matches.push(direct); continue }
+    // Match parcial significativo
+    const partial = otherSkillLabels.find((s, i) => {
+      const sl = otherSkillsLower[i]
+      return sl.length > 3 && (sl.includes(seekLower) || seekLower.includes(sl))
+    })
+    if (partial) { matches.push(partial); continue }
+    // Mención en bio
+    const words = seekLower.split(/\s+/).filter(w => w.length > 4)
+    if (words.some(w => otherBio.includes(w))) {
+      matches.push(seek)
     }
-    if (bonus > 0) break
   }
-  return bonus
+  return Array.from(new Set(matches)).slice(0, 3)
 }
 
-// Location bonus
+function getSeekingBonus(matches: string[]): number {
+  if (matches.length === 0) return 0
+  if (matches.length === 1) return 6
+  if (matches.length === 2) return 10
+  return 12
+}
+
 function getLocationBonus(a: MatchProfile, b: MatchProfile): number {
   if (!a.location || !b.location) return 0
   const locA = a.location.toLowerCase().trim()
   const locB = b.location.toLowerCase().trim()
   if (locA === locB) return 5
-  // Check if same country (both in Spain-related cities)
   const spainCities = ['madrid', 'barcelona', 'málaga', 'malaga', 'sevilla', 'valencia', 'bilbao', 'marbella', 'españa', 'spain']
   const aInSpain = spainCities.some(c => locA.includes(c))
   const bInSpain = spainCities.some(c => locB.includes(c))
@@ -73,77 +83,82 @@ function getLocationBonus(a: MatchProfile, b: MatchProfile): number {
   return 0
 }
 
-// Legal context bonus
-function getLegalBonus(a: MatchProfile, b: MatchProfile): number {
-  const legalKeywords = ['contrato', 'contratos', 'legal', 'regulación', 'regulacion', 'inversión', 'inversion', 'compliance', 'fintech', 'legal tech', 'legaltech']
-
-  const check = (legal: MatchProfile, other: MatchProfile): boolean => {
-    if (legal.founder_type !== 'Legal') return false
-    const otherText = `${other.bio} ${other.skills.map(s => s.label).join(' ')} ${other.seeking.join(' ')}`.toLowerCase()
-    return legalKeywords.some(kw => otherText.includes(kw))
-  }
-
-  if (check(a, b) || check(b, a)) return 7
-  return 0
+// Penalización por perfil incompleto del otro lado
+function getCompletenessPenalty(p: MatchProfile): number {
+  let penalty = 0
+  if (!p.bio || p.bio.trim().length < 30) penalty += 25
+  if (!p.skills || p.skills.length === 0) penalty += 15
+  if (!p.seeking || p.seeking.length === 0) penalty += 10
+  if (!p.full_name || p.full_name.trim().length < 3) penalty += 30
+  return penalty
 }
 
-// Generate natural explanation
-function generateExplanation(myProfile: MatchProfile, otherProfile: MatchProfile, typeScore: number): string {
-  const other = otherProfile.full_name.split(' ')[0]
+// Genera explicación personalizada usando datos reales del perfil
+function generateExplanation(
+  myProfile: MatchProfile,
+  otherProfile: MatchProfile,
+  matches: string[],
+  locationBonus: number,
+): string {
+  const other = otherProfile.full_name.split(' ')[0] || 'Este fundador'
   const myType = myProfile.founder_type
   const otherType = otherProfile.founder_type
 
-  // Same type
+  // Perfil incompleto: explicación honesta
+  if (!otherProfile.bio || otherProfile.bio.trim().length < 30) {
+    return `${other} aún no ha completado su perfil — espera a que añada bio y experiencia para valorar el encaje.`
+  }
+
+  const parts: string[] = []
+
+  // 1) Frase de complementariedad de tipos personalizada
   if (myType === otherType) {
-    return `Ambos sois ${myType} — hay overlap de rol, pero podéis complementaros en habilidades concretas si definís bien quién lidera qué.`
+    parts.push(`Ambos sois ${myType}, así que tendréis que repartir bien el liderazgo.`)
+  } else {
+    const combos: Record<string, string> = {
+      'Hacker+Hustler': `${other} aporta ${otherType === 'Hustler' ? 'el músculo comercial' : 'la parte técnica'} que tu perfil ${myType} necesita`,
+      'Hacker+Legal':   `${other} cubre ${otherType === 'Legal' ? 'la parte jurídica' : 'la ejecución técnica'} clave para escalar tu proyecto`,
+      'Hacker+Money':   `${other} ${otherType === 'Money' ? 'puede aportar capital' : 'construye producto'} y eso encaja con lo que tú ofreces`,
+      'Hustler+Money':  `${other} ${otherType === 'Money' ? 'aporta capital y red' : 'sabe vender y abrir mercado'}, complementa tu perfil`,
+      'Hustler+Legal':  `${other} ${otherType === 'Legal' ? 'da cobertura legal' : 'tiene canal comercial'}, dos pilares que se refuerzan`,
+      'Legal+Money':    `${other} ${otherType === 'Money' ? 'pone el capital' : 'aporta seguridad jurídica'}, base sólida para invertir con confianza`,
+    }
+    const key = [myType, otherType].sort().join('+')
+    parts.push((combos[key] || `${other} tiene un perfil complementario al tuyo`) + '.')
   }
 
-  const explanations: Record<string, string[]> = {
-    'Hacker+Hustler': [
-      `${other} construye producto y tú lo vendes — la combinación clásica de co-founders que funciona.`,
-      `Complementariedad directa: ${other} aporta la parte técnica que tú necesitas para escalar.`,
-    ],
-    'Hacker+Legal': [
-      `${other} tiene el producto y necesita cobertura legal — encaje directo con tu perfil.`,
-      `Un Hacker con tracción real + un perfil Legal es una combinación muy sólida para escalar con seguridad.`,
-    ],
-    'Hacker+Money': [
-      `${other} construye y tú financias — buena base si el producto tiene tracción.`,
-      `Capital + producto técnico es una combinación potente si hay alineación de visión.`,
-    ],
-    'Hustler+Money': [
-      `${other} sabe vender y tú pones el capital — juntos podéis acelerar rápido.`,
-      `Red comercial + financiación es una combinación que abre puertas grandes desde el día 1.`,
-    ],
-    'Hustler+Legal': [
-      `${other} tiene el canal comercial y tú la cobertura legal — complementariedad clara.`,
-      `Un Hustler con red + un perfil Legal cubre dos de los pilares más importantes para escalar.`,
-    ],
-    'Legal+Money': [
-      `${other} aporta capital y tú la seguridad jurídica — base sólida para invertir con confianza.`,
-      `Capital + cobertura legal es la combinación que da confianza a todos los stakeholders.`,
-    ],
+  // 2) Coincidencias concretas con lo que buscas
+  if (matches.length > 0) {
+    const list = matches.length === 1
+      ? matches[0]
+      : matches.slice(0, -1).join(', ') + ' y ' + matches[matches.length - 1]
+    parts.push(`Coincide con lo que buscas: ${list}.`)
   }
 
-  const key = [myType, otherType].sort().join('+')
-  const options = explanations[key] || [`${other} y tú tenéis perfiles complementarios que podrían generar sinergias interesantes.`]
-  return options[0]
+  // 3) Localización si aplica
+  if (locationBonus >= 5 && otherProfile.location) {
+    parts.push(`Ambos en ${otherProfile.location}.`)
+  } else if (locationBonus === 3) {
+    parts.push(`Los dos operáis en España.`)
+  }
+
+  return parts.join(' ')
 }
 
 export function calculateMatchScore(myProfile: MatchProfile, otherProfile: MatchProfile): MatchResult {
   const typeScore = getTypeScore(myProfile.founder_type, otherProfile.founder_type)
-  const seekingBonus = getSeekingBonus(myProfile, otherProfile)
+  const matches = findSkillMatches(myProfile, otherProfile)
+  const seekingBonus = getSeekingBonus(matches)
   const locationBonus = getLocationBonus(myProfile, otherProfile)
-  const legalBonus = getLegalBonus(myProfile, otherProfile)
+  const penalty = getCompletenessPenalty(otherProfile)
 
-  const rawScore = Math.min(99, typeScore + seekingBonus + locationBonus + legalBonus)
+  const rawScore = Math.max(20, Math.min(99, typeScore + seekingBonus + locationBonus - penalty))
 
-  // Break down into sub-scores
-  const score_hhm = Math.min(99, typeScore + legalBonus)
-  const score_skills = Math.min(99, 55 + seekingBonus + Math.floor(typeScore * 0.3))
-  const score_vision = Math.min(99, 50 + locationBonus + Math.floor(typeScore * 0.25))
+  const score_hhm = Math.max(20, Math.min(99, typeScore - Math.floor(penalty * 0.5)))
+  const score_skills = Math.max(15, Math.min(99, 55 + seekingBonus + Math.floor(typeScore * 0.3) - Math.floor(penalty * 0.6)))
+  const score_vision = Math.max(15, Math.min(99, 50 + locationBonus + Math.floor(typeScore * 0.25) - Math.floor(penalty * 0.4)))
 
-  const explanation = generateExplanation(myProfile, otherProfile, typeScore)
+  const explanation = generateExplanation(myProfile, otherProfile, matches, locationBonus)
 
   return {
     score: rawScore,

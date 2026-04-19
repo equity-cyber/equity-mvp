@@ -10,6 +10,8 @@ const TYPE_COLORS: Record<FounderType, string> = {
   Legal:   'bg-rose-100 text-rose-700',
 }
 
+const LINKEDIN_REGEX = /linkedin\.com\/in\//i
+
 interface Props {
   myProfileId: string | null
   onBack: () => void
@@ -22,6 +24,11 @@ interface ProfileData {
   skills: { label: string; cat: string }[]
   seeking: string[]
   avatar_url: string | null
+  github_username: string | null
+  github_verified: boolean
+  github_data: any
+  linkedin_url: string | null
+  linkedin_verified: string
 }
 
 export function MyProfileScreen({ myProfileId, onBack }: Props) {
@@ -29,6 +36,9 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [linkedinInput, setLinkedinInput] = useState('')
+  const [linkedinError, setLinkedinError] = useState<string | null>(null)
+  const [savingLinkedin, setSavingLinkedin] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const showToast = (msg: string) => {
@@ -53,7 +63,13 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
             skills: Array.isArray(data.skills) ? data.skills : [],
             seeking: Array.isArray(data.seeking) ? data.seeking : [],
             avatar_url: data.avatar_url || null,
+            github_username: data.github_username || null,
+            github_verified: !!data.github_verified,
+            github_data: data.github_data || null,
+            linkedin_url: data.linkedin_url || null,
+            linkedin_verified: data.linkedin_verified || 'none',
           })
+          setLinkedinInput(data.linkedin_url || '')
         }
         setLoading(false)
       })
@@ -92,6 +108,30 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
     setProfile(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev)
     setUploading(false)
     showToast('Foto actualizada')
+  }
+
+  const handleLinkGitHub = () => {
+    supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: window.location.origin + '/onboarding?github=linked' },
+    })
+  }
+
+  const handleSaveLinkedin = async () => {
+    if (!myProfileId) return
+    const value = linkedinInput.trim()
+    if (value && !LINKEDIN_REGEX.test(value)) {
+      setLinkedinError('Introduce una URL de LinkedIn válida (ej: linkedin.com/in/tu-nombre)')
+      return
+    }
+    setLinkedinError(null)
+    setSavingLinkedin(true)
+    const updates: any = { linkedin_url: value || null }
+    updates.linkedin_verified = value ? 'url_provided' : 'none'
+    await supabase.from('profiles').update(updates).eq('id', myProfileId)
+    setProfile(prev => prev ? { ...prev, linkedin_url: value || null, linkedin_verified: updates.linkedin_verified } : prev)
+    setSavingLinkedin(false)
+    showToast(value ? 'LinkedIn guardado' : 'LinkedIn eliminado')
   }
 
   const typeColor = profile ? TYPE_COLORS[profile.founder_type] || TYPE_COLORS.Hacker : ''
@@ -193,9 +233,71 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
               )}
             </div>
 
-            <div className="text-center">
-              <p className="text-xs text-zinc-300">ID: {myProfileId}</p>
+            {/* Verificación */}
+            <div className="bg-white rounded-2xl border border-zinc-100 p-5">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Verificación</p>
+
+              {/* GitHub */}
+              <div className="mb-4">
+                <p className="text-xs text-zinc-400 mb-2">GitHub</p>
+                {profile.github_verified && profile.github_data ? (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50">
+                    <span className="text-base">🐙</span>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-800">✓ @{profile.github_username}</p>
+                      <p className="text-xs text-emerald-600">
+                        {profile.github_data.repos} repos · {profile.github_data.total_stars} ⭐ · desde {profile.github_data.account_created}
+                      </p>
+                    </div>
+                  </div>
+                ) : profile.github_username ? (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50">
+                    <span className="text-base">🐙</span>
+                    <p className="text-sm text-zinc-600">@{profile.github_username} (sin verificar)</p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleLinkGitHub}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 transition-colors text-sm text-zinc-700 font-medium"
+                  >
+                    <span className="text-base">🐙</span>
+                    <span>Verificar con GitHub →</span>
+                  </button>
+                )}
+              </div>
+
+              {/* LinkedIn */}
+              <div>
+                <p className="text-xs text-zinc-400 mb-2">LinkedIn</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={linkedinInput}
+                    onChange={e => { setLinkedinInput(e.target.value); setLinkedinError(null) }}
+                    placeholder="linkedin.com/in/tu-nombre"
+                    className={`flex-1 px-3 py-2.5 rounded-xl border bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
+                      linkedinError ? 'border-red-300 focus:ring-red-400' : 'border-zinc-200 focus:ring-zinc-900'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveLinkedin}
+                    disabled={savingLinkedin}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-medium hover:bg-black disabled:opacity-40 transition-all"
+                  >
+                    {savingLinkedin ? '…' : 'Guardar'}
+                  </button>
+                </div>
+                {linkedinError && (
+                  <p className="text-xs text-red-500 mt-1">{linkedinError}</p>
+                )}
+                {profile.linkedin_verified === 'url_provided' && !linkedinError && (
+                  <p className="text-xs text-emerald-600 mt-1">✓ URL válida guardada</p>
+                )}
+              </div>
             </div>
+
           </div>
         )}
       </main>

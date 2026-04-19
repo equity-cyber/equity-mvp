@@ -63,6 +63,7 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
   const p = profile
   const ext = p as any
   const typeStyle = TYPE_COLORS[p.founder_type] || TYPE_COLORS.Hacker
+  const githubVerified = !!ext.github_verified
   const hasGithub = !!ext.github_username
   const hasLinkedin = !!ext.linkedin_url
 
@@ -133,11 +134,15 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
                   <div className={`inline-flex px-4 py-1 rounded-full text-sm font-medium border ${typeStyle.bg} ${typeStyle.text}`}>
                     {p.founder_type}
                   </div>
-                  {hasGithub && (
-                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-900 text-white">
+                  {githubVerified ? (
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-600 text-white">
+                      ✓ GitHub
+                    </span>
+                  ) : hasGithub ? (
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-400 text-white">
                       🐙 GitHub
                     </span>
-                  )}
+                  ) : null}
                   {hasLinkedin && (
                     <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-600 text-white">
                       💼 LinkedIn
@@ -154,44 +159,79 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
             </button>
           </div>
 
-          {/* Links visibles solo si conectados */}
-          {isConnected && (hasGithub || hasLinkedin) && (
-            <div className="mt-5 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
-              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">🔓 Enlaces verificados</p>
-              <div className="space-y-2">
-                {hasGithub && (
-                  <a
-                    href={`https://github.com/${ext.github_username}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-emerald-800 hover:underline"
-                  >
-                    🐙 github.com/{ext.github_username}
-                  </a>
-                )}
-                {hasLinkedin && (
-                  <a
-                    href={ext.linkedin_url.startsWith('http') ? ext.linkedin_url : `https://${ext.linkedin_url}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-emerald-800 hover:underline"
-                  >
-                    💼 {ext.linkedin_url}
-                  </a>
-                )}
-              </div>
+          {/* Verification + trust signals */}
+          {(githubVerified || hasLinkedin || hasGithub) && (
+            <div className="mt-5 space-y-2">
+              {/* GitHub verified — show stats */}
+              {githubVerified && ext.github_data && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm">🐙</span>
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">GitHub verificado</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-white rounded-xl p-2.5 text-center border border-emerald-100">
+                      <p className="text-lg font-bold text-zinc-900">{ext.github_data.repos}</p>
+                      <p className="text-xs text-zinc-500">repos</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-2.5 text-center border border-emerald-100">
+                      <p className="text-lg font-bold text-zinc-900">{ext.github_data.total_stars}</p>
+                      <p className="text-xs text-zinc-500">estrellas</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-2.5 text-center border border-emerald-100">
+                      <p className="text-lg font-bold text-zinc-900">{ext.github_data.account_created}</p>
+                      <p className="text-xs text-zinc-500">desde</p>
+                    </div>
+                  </div>
+                  {isConnected && (
+                    <a href={`https://github.com/${ext.github_username}`} target="_blank" rel="noopener noreferrer"
+                      className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 hover:underline">
+                      🔓 github.com/{ext.github_username}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* LinkedIn */}
+              {hasLinkedin && (
+                <div className="p-3.5 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">💼</span>
+                    <p className="text-xs font-semibold text-blue-700">LinkedIn</p>
+                  </div>
+                  {isConnected ? (
+                    <a
+                      href={ext.linkedin_url.startsWith('http') ? ext.linkedin_url : `https://${ext.linkedin_url}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-blue-700 hover:underline"
+                    >
+                      🔓 Ver perfil →
+                    </a>
+                  ) : (
+                    <span className="text-xs text-blue-500">🔒 Visible al conectar</span>
+                  )}
+                </div>
+              )}
+
+              {/* GitHub non-verified */}
+              {!githubVerified && hasGithub && !hasLinkedin && (
+                <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-2xl">
+                  <p className="text-xs text-zinc-500">🐙 GitHub sin verificar · Los enlaces se desbloquean al conectar</p>
+                </div>
+              )}
+
+              {/* Lock hint if nothing is connected yet */}
+              {!isConnected && !githubVerified && !hasLinkedin && hasGithub && (
+                <div className="p-3 bg-zinc-50 border border-zinc-100 rounded-2xl">
+                  <p className="text-xs text-zinc-400">🔒 Los enlaces se desbloquean al aceptar la conexión</p>
+                </div>
+              )}
             </div>
           )}
 
-          {!isConnected && (hasGithub || hasLinkedin) && (
-            <div className="mt-5 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
-              <p className="text-xs text-zinc-500">
-                🔒 Los enlaces de GitHub y LinkedIn se desbloquean al aceptar la conexión
-              </p>
-            </div>
-          )}
-
-          <div className="mt-7 mb-8 p-5 bg-zinc-50 rounded-2xl border border-zinc-100">
+          {/* Bio */}
+          <div className="mt-6 mb-7 p-5 bg-zinc-50 rounded-2xl border border-zinc-100">
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">Sobre mí</p>
             <p className="text-zinc-700 leading-relaxed">{p.bio}</p>
           </div>
 

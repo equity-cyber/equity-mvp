@@ -6,17 +6,49 @@ function ScoreRing({ score }: { score: number }) {
   const percentage = Math.min(Math.max(score, 0), 100)
   const color = percentage >= 85 ? '#10b981' : percentage >= 70 ? '#f59e0b' : '#ef4444'
   return (
-    <div className="relative w-16 h-16">
-      <svg className="w-16 h-16 -rotate-90" viewBox="0 0 50 50">
+    <div className="relative w-14 h-14">
+      <svg className="w-14 h-14 -rotate-90" viewBox="0 0 50 50">
         <circle cx="25" cy="25" r="22" fill="none" stroke="#e5e7eb" strokeWidth="4" />
-        <circle cx="25" cy="25" r="22" fill="none" stroke={color} strokeWidth="4" 
+        <circle cx="25" cy="25" r="22" fill="none" stroke={color} strokeWidth="4"
           strokeDasharray={`${percentage * 1.38} 138`} strokeLinecap="round" />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-bold" style={{ color }}>{percentage}</span>
+        <span className="text-xl font-bold" style={{ color }}>{percentage}</span>
       </div>
     </div>
   )
+}
+
+function TrustBadges({ ext }: { ext: any }) {
+  const githubVerified = !!ext.github_verified
+  const hasGithub = !!ext.github_username
+  const hasLinkedin = !!ext.linkedin_url
+
+  return (
+    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+      {githubVerified ? (
+        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-600 text-white">
+          ✓ GitHub
+        </span>
+      ) : hasGithub ? (
+        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-300 text-zinc-600">
+          🐙 GitHub
+        </span>
+      ) : null}
+      {hasLinkedin && (
+        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-600 text-white">
+          💼 LinkedIn
+        </span>
+      )}
+    </div>
+  )
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  stripe: 'Stripe',
+  github: 'GitHub',
+  linkedin: 'LinkedIn',
+  doc: 'Propio',
 }
 
 interface Props {
@@ -29,80 +61,86 @@ interface Props {
 
 export function ProfileCard({ profile: p, matchScore, matchExplanation, onOpen, onPass }: Props) {
   const ext = p as any
+  const githubVerified = !!ext.github_verified
   const hasGithub = !!ext.github_username
   const hasLinkedin = !!ext.linkedin_url
 
+  // Trust signal: count verifications
+  const trustLevel = [githubVerified, hasLinkedin].filter(Boolean).length
+  const hasTrust = githubVerified || hasLinkedin || hasGithub
+
   return (
-    <div 
-      className="bg-white rounded-3xl border border-zinc-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden"
+    <div
+      className="bg-white rounded-3xl border border-zinc-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden"
       onClick={() => onOpen(p)}
     >
-      <div className="p-6 flex items-start justify-between">
-        <div className="flex items-center gap-4">
+      <div className="p-5 flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <Avatar
             name={p.full_name}
             founderType={p.founder_type}
             avatarUrl={ext.avatar_url}
             size="md"
           />
-          <div>
-            <h3 className="font-semibold text-xl text-zinc-900">{p.full_name}</h3>
-            <p className="text-sm text-zinc-500">{p.role} · {p.location}</p>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="px-4 py-1 text-xs font-medium rounded-full border bg-zinc-50 text-zinc-600">
+          <div className="min-w-0">
+            <h3 className="font-bold text-lg text-zinc-900 leading-tight truncate">{p.full_name}</h3>
+            <p className="text-sm text-zinc-500 truncate">{p.role} · {p.location}</p>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <span className="px-3 py-0.5 text-xs font-medium rounded-full border border-zinc-200 bg-zinc-50 text-zinc-600">
                 {p.founder_type}
               </span>
-              {hasGithub && (
-                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-900 text-white">
-                  🐙 GitHub
-                </span>
-              )}
+              {githubVerified ? (
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-600 text-white">✓ GitHub</span>
+              ) : hasGithub ? (
+                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-300 text-zinc-600">🐙 GitHub</span>
+              ) : null}
               {hasLinkedin && (
-                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-600 text-white">
-                  💼 LinkedIn
-                </span>
+                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-600 text-white">💼 LinkedIn</span>
               )}
             </div>
           </div>
         </div>
-        <div className="flex flex-col items-end">
+        <div className="flex flex-col items-end flex-shrink-0">
           <ScoreRing score={matchScore} />
-          <span className="text-xs text-zinc-400 mt-1">MATCH</span>
+          <span className="text-xs text-zinc-400 mt-1 font-medium tracking-wide">MATCH</span>
         </div>
       </div>
 
-      <div className="mx-6 border-t border-zinc-100 pt-5 pb-4">
-        <p className="uppercase text-xs font-semibold text-zinc-400 tracking-widest mb-3">Prueba de trabajo</p>
-        <div className="flex gap-4 bg-zinc-50 rounded-2xl p-5 border border-zinc-100">
-          <div className="px-3.5 py-1 bg-white text-xs font-medium border rounded-xl self-start">
-            {p.top_pow_source === 'stripe' ? 'Stripe' : p.top_pow_source === 'github' ? 'GitHub' : p.top_pow_source === 'linkedin' ? 'LinkedIn' : 'Doc'}
+      {/* Proof of Work */}
+      <div className="mx-5 border-t border-zinc-100 pt-4 pb-3">
+        <p className="uppercase text-xs font-semibold text-zinc-400 tracking-widest mb-2.5">Prueba de trabajo</p>
+        <div className="flex gap-3 bg-zinc-50 rounded-2xl p-4 border border-zinc-100">
+          <div className="px-2.5 py-1 bg-white text-xs font-semibold border border-zinc-200 rounded-lg self-start text-zinc-600 shrink-0">
+            {SOURCE_LABEL[p.top_pow_source] ?? 'Doc'}
           </div>
-          <div>
-            <p className="font-medium text-zinc-900">{p.top_pow}</p>
-            <p className="text-sm text-zinc-500 mt-1">{p.top_pow_metric}</p>
+          <div className="min-w-0">
+            <p className="font-semibold text-zinc-900 leading-snug">{p.top_pow}</p>
+            <p className="text-sm text-zinc-500 mt-0.5 leading-snug">{p.top_pow_metric}</p>
           </div>
         </div>
       </div>
 
-      <div className="mx-6 mb-6 bg-zinc-50 rounded-2xl p-5 border border-zinc-100">
-        <p className="uppercase text-xs font-semibold text-zinc-400 tracking-widest mb-2">Por qué la IA os sugiere</p>
-        <p className="text-sm text-zinc-600 leading-relaxed line-clamp-3">
+      {/* Match explanation */}
+      <div className="mx-5 mb-5 bg-zinc-50 rounded-2xl p-4 border border-zinc-100">
+        <p className="uppercase text-xs font-semibold text-zinc-400 tracking-widest mb-1.5">Por qué la IA os sugiere</p>
+        <p className="text-sm text-zinc-600 leading-relaxed line-clamp-2">
           {matchExplanation}
         </p>
       </div>
 
-      <div className="flex gap-3 px-6 pb-6" onClick={e => e.stopPropagation()}>
+      {/* Actions */}
+      <div className="flex gap-3 px-5 pb-5" onClick={e => e.stopPropagation()}>
         <button
           onClick={() => onPass(p.id)}
-          className="flex-1 py-3.5 text-sm font-medium border border-zinc-200 rounded-2xl hover:bg-zinc-50"
+          className="flex-1 py-3 text-sm font-medium border border-zinc-200 rounded-2xl text-zinc-600 hover:bg-zinc-50 transition-colors"
         >
           Pasar
         </button>
         <button
           onClick={() => onOpen(p)}
-          className="flex-1 py-3.5 bg-zinc-900 text-white text-sm font-semibold rounded-2xl hover:bg-black"
+          className="flex-1 py-3 bg-zinc-900 text-white text-sm font-semibold rounded-2xl hover:bg-black transition-colors"
         >
-          Ver perfil
+          Ver perfil →
         </button>
       </div>
     </div>

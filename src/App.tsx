@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { supabase } from './lib/supabase'
+import { fetchGitHubData } from './lib/github'
 import { LoginScreen } from './screens/LoginScreen'
 import { OnboardingScreen } from './screens/OnboardingScreen'
 import { FeedScreen } from './screens/FeedScreen'
@@ -22,12 +23,19 @@ export default function App() {
   const [chatOtherProfileId, setChatOtherProfileId] = useState<string>('')
   const [paymentSuccess, setPaymentSuccess] = useState(false)
 
-  // Check for payment return from Stripe (just show a toast, webhook handles the rest)
+  // Capture URL params on first render before any redirect clears them
+  const [isGithubRedirect] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('github') === 'linked'
+  })
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    if (params.get('payment') === 'success' || params.get('github') === 'linked') {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
     if (params.get('payment') === 'success') {
       setPaymentSuccess(true)
-      window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
 
@@ -41,10 +49,24 @@ export default function App() {
       .select('id, founder_type')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (data) {
           setMyProfileId(data.id)
           setMyFounderType(data.founder_type)
+          // If returning from GitHub OAuth and profile already exists, save GitHub data now
+          if (isGithubRedirect) {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session?.provider_token) {
+              const ghData = await fetchGitHubData(session.provider_token)
+              if (ghData) {
+                await supabase.from('profiles').update({
+                  github_username: ghData.username,
+                  github_verified: true,
+                  github_data: ghData,
+                }).eq('id', data.id)
+              }
+            }
+          }
           setScreen('feed')
         } else {
           setScreen('onboarding')
@@ -70,6 +92,7 @@ export default function App() {
   if (screen === 'onboarding') return (
     <OnboardingScreen
       userId={user?.id ?? null}
+      isGithubRedirect={isGithubRedirect}
       onComplete={(profileId, founderType) => {
         setMyProfileId(profileId)
         setMyFounderType(founderType)
