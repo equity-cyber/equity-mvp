@@ -39,6 +39,14 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
   const [linkedinInput, setLinkedinInput] = useState('')
   const [linkedinError, setLinkedinError] = useState<string | null>(null)
   const [savingLinkedin, setSavingLinkedin] = useState(false)
+  const [editingBio, setEditingBio] = useState(false)
+  const [bioDraft, setBioDraft] = useState('')
+  const [savingBio, setSavingBio] = useState(false)
+  const [editingSkills, setEditingSkills] = useState(false)
+  const [skillsDraft, setSkillsDraft] = useState('')
+  const [editingSeeking, setEditingSeeking] = useState(false)
+  const [seekingDraft, setSeekingDraft] = useState('')
+  const [savingTags, setSavingTags] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const showToast = (msg: string) => {
@@ -115,6 +123,32 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
       provider: 'github',
       options: { redirectTo: window.location.origin + '/onboarding?github=linked' },
     })
+  }
+
+  const handleSaveBio = async () => {
+    if (!myProfileId) return
+    const value = bioDraft.trim()
+    if (value.length < 30) { showToast('La bio necesita al menos 30 caracteres'); return }
+    setSavingBio(true)
+    await supabase.from('profiles').update({ bio: value }).eq('id', myProfileId)
+    setProfile(prev => prev ? { ...prev, bio: value } : prev)
+    setSavingBio(false)
+    setEditingBio(false)
+    showToast('Bio actualizada')
+  }
+
+  const saveTagList = async (field: 'skills' | 'seeking', raw: string) => {
+    if (!myProfileId) return
+    setSavingTags(true)
+    const items = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 8)
+    const value = field === 'skills'
+      ? items.map(label => ({ label, cat: 'biz' }))
+      : items
+    await supabase.from('profiles').update({ [field]: value }).eq('id', myProfileId)
+    setProfile(prev => prev ? { ...prev, [field]: value as any } : prev)
+    setSavingTags(false)
+    if (field === 'skills') setEditingSkills(false); else setEditingSeeking(false)
+    showToast('Guardado')
   }
 
   const handleSaveLinkedin = async () => {
@@ -195,16 +229,68 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
 
             {/* Bio */}
             <div className="bg-white rounded-2xl border border-zinc-100 p-5">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Bio</p>
-              <p className="text-zinc-700 leading-relaxed">
-                {profile.bio || 'Sin bio todavía'}
-              </p>
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Bio</p>
+                {!editingBio && (
+                  <button onClick={() => { setBioDraft(profile.bio); setEditingBio(true) }} className="text-xs text-zinc-500 hover:text-zinc-900">
+                    Editar
+                  </button>
+                )}
+              </div>
+              {editingBio ? (
+                <>
+                  <textarea
+                    value={bioDraft}
+                    onChange={e => setBioDraft(e.target.value.slice(0, 500))}
+                    rows={4}
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 resize-none"
+                  />
+                  <div className="flex justify-between items-center mt-2">
+                    <span className={`text-xs ${bioDraft.trim().length >= 30 ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                      {bioDraft.trim().length}/500 · min 30
+                    </span>
+                    <div className="flex gap-2">
+                      <button onClick={() => setEditingBio(false)} className="text-xs px-3 py-1.5 text-zinc-500 hover:bg-zinc-50 rounded-lg">Cancelar</button>
+                      <button onClick={handleSaveBio} disabled={savingBio} className="text-xs px-3 py-1.5 bg-zinc-900 text-white rounded-lg disabled:opacity-40">
+                        {savingBio ? '…' : 'Guardar'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-zinc-700 leading-relaxed whitespace-pre-wrap">
+                  {profile.bio || 'Sin bio todavía'}
+                </p>
+              )}
             </div>
 
             {/* Skills */}
             <div className="bg-white rounded-2xl border border-zinc-100 p-5">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Lo que aporto</p>
-              {profile.skills.length > 0 ? (
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Lo que aporto</p>
+                {!editingSkills && (
+                  <button onClick={() => { setSkillsDraft(profile.skills.map(s => s.label).join(', ')); setEditingSkills(true) }} className="text-xs text-zinc-500 hover:text-zinc-900">
+                    Editar
+                  </button>
+                )}
+              </div>
+              {editingSkills ? (
+                <>
+                  <input
+                    type="text"
+                    value={skillsDraft}
+                    onChange={e => setSkillsDraft(e.target.value)}
+                    placeholder="ej. React, ventas B2B, fundraising"
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                  />
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={() => setEditingSkills(false)} className="text-xs px-3 py-1.5 text-zinc-500 hover:bg-zinc-50 rounded-lg">Cancelar</button>
+                    <button onClick={() => saveTagList('skills', skillsDraft)} disabled={savingTags} className="text-xs px-3 py-1.5 bg-zinc-900 text-white rounded-lg disabled:opacity-40">
+                      {savingTags ? '…' : 'Guardar'}
+                    </button>
+                  </div>
+                </>
+              ) : profile.skills.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {profile.skills.map((s, i) => (
                     <span key={i} className="px-3 py-1 bg-zinc-100 text-zinc-700 text-sm rounded-full">
@@ -213,14 +299,37 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
                   ))}
                 </div>
               ) : (
-                <p className="text-zinc-400 text-sm">Sin especificar</p>
+                <p className="text-zinc-400 text-sm">Sin especificar · Pulsa Editar</p>
               )}
             </div>
 
             {/* Seeking */}
             <div className="bg-white rounded-2xl border border-zinc-100 p-5">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Lo que busco</p>
-              {profile.seeking.length > 0 ? (
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Lo que busco</p>
+                {!editingSeeking && (
+                  <button onClick={() => { setSeekingDraft(profile.seeking.join(', ')); setEditingSeeking(true) }} className="text-xs text-zinc-500 hover:text-zinc-900">
+                    Editar
+                  </button>
+                )}
+              </div>
+              {editingSeeking ? (
+                <>
+                  <input
+                    type="text"
+                    value={seekingDraft}
+                    onChange={e => setSeekingDraft(e.target.value)}
+                    placeholder="ej. dev fullstack, capital pre-seed"
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                  />
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={() => setEditingSeeking(false)} className="text-xs px-3 py-1.5 text-zinc-500 hover:bg-zinc-50 rounded-lg">Cancelar</button>
+                    <button onClick={() => saveTagList('seeking', seekingDraft)} disabled={savingTags} className="text-xs px-3 py-1.5 bg-zinc-900 text-white rounded-lg disabled:opacity-40">
+                      {savingTags ? '…' : 'Guardar'}
+                    </button>
+                  </div>
+                </>
+              ) : profile.seeking.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {profile.seeking.map((s, i) => (
                     <span key={i} className="px-3 py-1 bg-emerald-50 text-emerald-700 text-sm rounded-full">
@@ -229,7 +338,7 @@ export function MyProfileScreen({ myProfileId, onBack }: Props) {
                   ))}
                 </div>
               ) : (
-                <p className="text-zinc-400 text-sm">Sin especificar</p>
+                <p className="text-zinc-400 text-sm">Sin especificar · Pulsa Editar</p>
               )}
             </div>
 

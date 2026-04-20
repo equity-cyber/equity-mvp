@@ -93,6 +93,50 @@ function getCompletenessPenalty(p: MatchProfile): number {
   return penalty
 }
 
+// Penalización por MI propio perfil incompleto (sin datos no se puede matchear bien)
+function getSelfPenalty(me: MatchProfile): number {
+  let penalty = 0
+  if (!me.bio || me.bio.trim().length < 30) penalty += 15
+  if (!me.seeking || me.seeking.length === 0) penalty += 15
+  if (!me.skills || me.skills.length === 0) penalty += 10
+  return penalty
+}
+
+// Extrae señales concretas de la bio del otro (números, stack, dominio)
+const SIGNAL_KEYWORDS: Record<string, string> = {
+  'saas': 'SaaS',
+  'b2b': 'B2B',
+  'b2c': 'B2C',
+  'fintech': 'fintech',
+  'legaltech': 'legaltech',
+  'healthtech': 'healthtech',
+  'ecommerce': 'e-commerce',
+  'marketplace': 'marketplace',
+  'mobile': 'mobile',
+  'react': 'React',
+  'node': 'Node',
+  'python': 'Python',
+  'ai': 'IA',
+  'ml': 'ML',
+  'growth': 'growth',
+  'fundraising': 'fundraising',
+  'ventas': 'ventas',
+  'enterprise': 'enterprise',
+}
+
+function extractSignals(bio: string): string[] {
+  const lower = bio.toLowerCase()
+  const found: string[] = []
+  for (const [kw, label] of Object.entries(SIGNAL_KEYWORDS)) {
+    if (lower.includes(kw)) found.push(label)
+    if (found.length >= 2) break
+  }
+  // Detecta métricas tipo "200 clientes", "50k MRR", "3 años"
+  const metric = bio.match(/\b(\d{2,}[kKmM]?)\s*(clientes|usuarios|mrr|arr|€|euros|años|años)\b/i)
+  if (metric) found.unshift(metric[0])
+  return found.slice(0, 2)
+}
+
 // Genera explicación personalizada usando datos reales del perfil
 function generateExplanation(
   myProfile: MatchProfile,
@@ -135,7 +179,13 @@ function generateExplanation(
     parts.push(`Coincide con lo que buscas: ${list}.`)
   }
 
-  // 3) Localización si aplica
+  // 3) Señales concretas de la bio (tracción, stack, dominio)
+  const signals = extractSignals(otherProfile.bio)
+  if (signals.length > 0 && matches.length === 0) {
+    parts.push(`Su experiencia apunta a ${signals.join(' y ')}.`)
+  }
+
+  // 4) Localización si aplica
   if (locationBonus >= 5 && otherProfile.location) {
     parts.push(`Ambos en ${otherProfile.location}.`)
   } else if (locationBonus === 3) {
@@ -150,7 +200,9 @@ export function calculateMatchScore(myProfile: MatchProfile, otherProfile: Match
   const matches = findSkillMatches(myProfile, otherProfile)
   const seekingBonus = getSeekingBonus(matches)
   const locationBonus = getLocationBonus(myProfile, otherProfile)
-  const penalty = getCompletenessPenalty(otherProfile)
+  const otherPenalty = getCompletenessPenalty(otherProfile)
+  const selfPenalty = getSelfPenalty(myProfile)
+  const penalty = otherPenalty + selfPenalty
 
   const rawScore = Math.max(20, Math.min(99, typeScore + seekingBonus + locationBonus - penalty))
 
