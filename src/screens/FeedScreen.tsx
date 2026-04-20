@@ -143,15 +143,21 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnec
 
   useEffect(() => {
     const loadRealProfiles = async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
+      const [{ data, error }, blocksRes] = await Promise.all([
+        supabase.from('profiles').select('*'),
+        myProfileId
+          ? supabase.from('profile_blocks').select('blocked_id').eq('blocker_id', myProfileId)
+          : Promise.resolve({ data: [] as any[] }),
+      ])
+
+      const blocked = new Set((blocksRes.data || []).map((b: any) => b.blocked_id))
 
       if (!error && data) {
         const mockIds = new Set(MOCK_PROFILES.map(p => p.id))
         const realProfiles = data
           .filter(row => row.id !== myProfileId)
           .filter(row => !mockIds.has(row.id))
+          .filter(row => !blocked.has(row.id))
           .filter(isValidProfile)
           .map(toMockProfile)
 
@@ -287,9 +293,21 @@ export function FeedScreen({ myProfileId, myFounderType, onSignOut, onOpenConnec
         )}
 
         {loadingProfiles ? (
-          <div className="text-center py-24">
-            <div className="w-8 h-8 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-3"/>
-            <p className="text-zinc-400 text-sm">Buscando los mejores matches…</p>
+          <div className="space-y-4">
+            {[0,1,2].map(i => (
+              <div key={i} className="bg-white rounded-3xl border border-zinc-100 p-5 animate-pulse">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-zinc-100" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-zinc-100 rounded w-2/3" />
+                    <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                    <div className="h-3 bg-zinc-100 rounded w-1/4" />
+                  </div>
+                  <div className="w-14 h-14 rounded-full bg-zinc-100" />
+                </div>
+                <div className="mt-5 h-16 bg-zinc-50 rounded-2xl" />
+              </div>
+            ))}
           </div>
         ) : sortedVisible.length === 0 ? (
           <div className="text-center py-24">

@@ -95,8 +95,10 @@ function buildDaySections(messages: Message[]): DaySection[] {
     const dayKey = d.toDateString()
     if (dayKey !== currentDayKey) { flushDay(); currentDayKey = dayKey }
 
-    const lastTime = currentGroup?.messages.at(-1)
-      ? new Date(currentGroup.messages.at(-1)!.created_at).getTime() : 0
+    const lastMsg = currentGroup && currentGroup.messages.length > 0
+      ? currentGroup.messages[currentGroup.messages.length - 1]
+      : null
+    const lastTime = lastMsg ? new Date(lastMsg.created_at).getTime() : 0
     const gap = d.getTime() - lastTime
 
     if (currentGroup && currentGroup.from_profile_id === msg.from_profile_id && gap < 5 * 60 * 1000) {
@@ -481,7 +483,7 @@ export function ChatScreen({ connectionId, myProfileId, otherProfileId, otherNam
                         </div>
                         {/* Timestamp on last message of group */}
                         <p className="text-xs text-zinc-400 mt-1 px-1">
-                          {formatTime(group.messages.at(-1)!.created_at)}
+                          {formatTime(group.messages[group.messages.length - 1].created_at)}
                         </p>
                       </div>
                     )

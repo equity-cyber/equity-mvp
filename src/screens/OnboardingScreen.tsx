@@ -52,7 +52,11 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props
     })
   }, [isGithubRedirect, isGuest])
 
-  const canSubmit = fullName.trim() && founderType && bio.trim()
+  const trimmedName = fullName.trim()
+  const trimmedBio = bio.trim()
+  const nameValid = trimmedName.length >= 3 && /\s/.test(trimmedName) // nombre + apellido
+  const bioValid = trimmedBio.length >= 50
+  const canSubmit = nameValid && founderType && bioValid
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -155,7 +159,12 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props
                 placeholder="Tu nombre y apellido"
                 required
                 autoFocus
-                className="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                minLength={3}
+                className={`w-full px-3 py-2 rounded-xl border bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
+                  trimmedName.length > 0 && !nameValid
+                    ? 'border-amber-300 focus:ring-amber-400'
+                    : 'border-zinc-200 focus:ring-zinc-900'
+                }`}
               />
             </div>
           </div>
@@ -191,10 +200,21 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props
               value={bio}
               onChange={e => setBio(e.target.value)}
               placeholder="ej. Llevo 3 años construyendo SaaS B2B con 200 clientes activos. Busco socio comercial para escalar."
-              rows={3}
+              rows={4}
               required
-              className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all resize-none"
+              minLength={50}
+              className={`w-full px-3 py-2.5 rounded-xl border bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all resize-none ${
+                trimmedBio.length > 0 && !bioValid
+                  ? 'border-amber-300 focus:ring-amber-400'
+                  : 'border-zinc-200 focus:ring-zinc-900'
+              }`}
             />
+            <div className="flex justify-between items-center mt-1.5">
+              <span className={`text-xs ${bioValid ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                {bioValid ? '✓ Bio completa' : `Mínimo 50 caracteres (te faltan ${Math.max(0, 50 - trimmedBio.length)})`}
+              </span>
+              <span className="text-xs text-zinc-300">{trimmedBio.length}/500</span>
+            </div>
           </div>
 
           {/* Detalles opcionales — colapsable */}
@@ -318,14 +338,6 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props
                 </span>
               : 'Ir al feed →'
             }
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onComplete(null, null)}
-            className="w-full py-2 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
-          >
-            Saltar por ahora
           </button>
 
         </form>

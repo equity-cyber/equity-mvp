@@ -33,6 +33,12 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
   const [alreadySent, setAlreadySent] = useState(false)
   const [sending, setSending] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportReason, setReportReason] = useState('')
+  const [reportDone, setReportDone] = useState(false)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [blockBusy, setBlockBusy] = useState(false)
 
   useEffect(() => {
     if (profile) {
@@ -81,7 +87,38 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
 
   const handleClose = () => {
     setVisible(false)
+    setMenuOpen(false)
+    setReportOpen(false)
     setTimeout(onClose, 280)
+  }
+
+  const submitReport = async () => {
+    if (!myProfileId || !profile || !reportReason.trim() || reportBusy) return
+    setReportBusy(true)
+    try {
+      await supabase.from('profile_reports').insert({
+        reporter_id: myProfileId,
+        reported_id: profile.id,
+        reason: reportReason.trim().slice(0, 500),
+      })
+    } catch { /* silent */ }
+    setReportBusy(false)
+    setReportDone(true)
+    setTimeout(() => { setReportOpen(false); setReportDone(false); setReportReason('') }, 1500)
+  }
+
+  const submitBlock = async () => {
+    if (!myProfileId || !profile || blockBusy) return
+    if (!confirm(`¿Bloquear a ${profile.full_name}? No volveréis a veros.`)) return
+    setBlockBusy(true)
+    try {
+      await supabase.from('profile_blocks').insert({
+        blocker_id: myProfileId,
+        blocked_id: profile.id,
+      })
+    } catch { /* silent */ }
+    setBlockBusy(false)
+    handleClose()
   }
 
   const handleConnect = async () => {
@@ -151,12 +188,43 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
                 </div>
               </div>
             </div>
-            <button
-              onClick={handleClose}
-              className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-500 hover:bg-zinc-200 transition-colors"
-            >
-              ✕
-            </button>
+            <div className="flex items-start gap-1">
+              {myProfileId && (
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuOpen(v => !v)}
+                    aria-label="Más opciones"
+                    className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-500 hover:bg-zinc-200 transition-colors"
+                  >
+                    ⋯
+                  </button>
+                  {menuOpen && (
+                    <div className="absolute right-0 top-11 z-20 bg-white border border-zinc-200 rounded-xl shadow-lg overflow-hidden min-w-[160px]">
+                      <button
+                        onClick={() => { setMenuOpen(false); setReportOpen(true) }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                      >
+                        🚩 Reportar
+                      </button>
+                      <button
+                        onClick={() => { setMenuOpen(false); submitBlock() }}
+                        disabled={blockBusy}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        🚫 Bloquear
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={handleClose}
+                aria-label="Cerrar"
+                className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-500 hover:bg-zinc-200 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Verification + trust signals */}
@@ -244,7 +312,7 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
                 <p className="text-sm text-zinc-500 -mt-1">MATCH</p>
               </div>
               <div className="text-right text-xs text-zinc-400">
-                Basado en reglas de<br />complementariedad
+                Complementariedad<br />HHM + skills + visión
               </div>
             </div>
             <div className="space-y-5">
@@ -281,7 +349,7 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
           <div className="mb-8 p-6 bg-amber-50 border border-amber-100 rounded-2xl">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">✦</span>
-              <p className="font-semibold text-amber-800">Por qué la IA os sugiere</p>
+              <p className="font-semibold text-amber-800">Por qué encajáis</p>
             </div>
             <p className="text-amber-700 leading-relaxed">{match.explanation}</p>
           </div>
@@ -322,6 +390,41 @@ export function ProfileDetail({ profile, myProfileId, myProfile, onClose }: Prop
           </p>
         </div>
       </div>
+
+      {reportOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4" onClick={() => setReportOpen(false)}>
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            {reportDone ? (
+              <div className="text-center py-4">
+                <div className="w-14 h-14 mx-auto mb-4 bg-emerald-100 rounded-2xl flex items-center justify-center text-3xl">✓</div>
+                <h3 className="text-lg font-bold text-zinc-900">Reporte enviado</h3>
+                <p className="text-sm text-zinc-500 mt-1">Gracias. Lo revisaremos en menos de 24h.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold text-zinc-900 mb-1">Reportar a {p.full_name}</h3>
+                <p className="text-sm text-zinc-500 mb-4">Cuéntanos qué pasa. Revisaremos el perfil.</p>
+                <textarea
+                  value={reportReason}
+                  onChange={e => setReportReason(e.target.value.slice(0, 500))}
+                  placeholder="ej. Perfil falso, lenguaje inapropiado, spam…"
+                  rows={4}
+                  className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 resize-none"
+                />
+                <div className="text-xs text-zinc-400 text-right mt-1">{reportReason.length}/500</div>
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => setReportOpen(false)} className="flex-1 py-3 border border-zinc-200 rounded-xl text-sm text-zinc-600 hover:bg-zinc-50">Cancelar</button>
+                  <button
+                    onClick={submitReport}
+                    disabled={!reportReason.trim() || reportBusy}
+                    className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40"
+                  >{reportBusy ? 'Enviando…' : 'Enviar reporte'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showConnectModal && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4">
