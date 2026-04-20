@@ -64,8 +64,8 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete, onBackT
 
   const trimmedName = fullName.trim()
   const trimmedBio = bio.trim()
-  const nameValid = trimmedName.length >= 3 && /\s/.test(trimmedName) // nombre + apellido
-  const bioValid = trimmedBio.length >= 50
+  const nameValid = trimmedName.length >= 3
+  const bioValid = trimmedBio.length >= 30
   const canSubmit = nameValid && founderType && bioValid
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -221,7 +221,7 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete, onBackT
               placeholder="ej. Llevo 3 años construyendo SaaS B2B con 200 clientes activos. Busco socio comercial para escalar."
               rows={4}
               required
-              minLength={50}
+              minLength={30}
               className={`w-full px-3 py-2.5 rounded-xl border bg-zinc-50 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all resize-none ${
                 trimmedBio.length > 0 && !bioValid
                   ? 'border-amber-300 focus:ring-amber-400'
@@ -230,7 +230,7 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete, onBackT
             />
             <div className="flex justify-between items-center mt-1.5">
               <span className={`text-xs ${bioValid ? 'text-emerald-600' : 'text-zinc-400'}`}>
-                {bioValid ? '✓ Bio completa' : `Mínimo 50 caracteres (te faltan ${Math.max(0, 50 - trimmedBio.length)})`}
+                {bioValid ? '✓ Bio suficiente' : `Mínimo 30 caracteres (te faltan ${Math.max(0, 30 - trimmedBio.length)})`}
               </span>
               <span className="text-xs text-zinc-300">{trimmedBio.length}/500</span>
             </div>
@@ -357,6 +357,14 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete, onBackT
                 </span>
               : 'Ir al feed →'
             }
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onComplete(null, null)}
+            className="w-full py-2 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+          >
+            Saltar y explorar como invitado →
           </button>
 
         </form>
