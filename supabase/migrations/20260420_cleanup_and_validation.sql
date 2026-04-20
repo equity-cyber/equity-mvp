@@ -1,12 +1,41 @@
 -- ============================================================================
 -- Limpieza de perfiles de prueba + validación server-side
--- Ejecutar en Supabase SQL editor (proyecto eocfuhidteqlatkxhrac)
+-- Proyecto: eocfuhidteqlatkxhrac
+-- EJECUTAR POR BLOQUES en el SQL Editor de Supabase (uno a uno)
 -- ============================================================================
 
--- 1) Borrar mensajes/conexiones de perfiles inválidos primero (evitar FK)
+-- ----------------------------------------------------------------------------
+-- BLOQUE 0 · Diagnóstico: qué tipo tienen las columnas id / from_profile_id
+-- Ejecuta esto primero para ver los tipos. Si todos son "uuid" o todos "text",
+-- los castings de abajo funcionarán sin cambios.
+-- ----------------------------------------------------------------------------
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (column_name IN ('id', 'from_profile_id', 'to_profile_id', 'profile_id'))
+  AND table_name IN ('profiles','messages','connections')
+ORDER BY table_name, column_name;
+
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 1 · Identificar los IDs de perfiles inválidos (solo SELECT, no borra)
+-- Revisa el listado antes de ejecutar los DELETE.
+-- ----------------------------------------------------------------------------
+SELECT id, full_name, bio
+FROM profiles
+WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz',
+                                 'loco','prueba','test','testing','asdf','qwer',
+                                 'pepe lopez','amazon undertaker')
+   OR LENGTH(TRIM(full_name)) < 3
+   OR COALESCE(LENGTH(TRIM(bio)), 0) < 30;
+
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 2 · Borrar mensajes de perfiles inválidos (cast a text por si hay mismatch)
+-- ----------------------------------------------------------------------------
 DELETE FROM messages
-WHERE from_profile_id IN (
-  SELECT id FROM profiles
+WHERE from_profile_id::text IN (
+  SELECT id::text FROM profiles
   WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz',
                                    'loco','prueba','test','testing','asdf','qwer',
                                    'pepe lopez','amazon undertaker')
@@ -14,16 +43,21 @@ WHERE from_profile_id IN (
      OR COALESCE(LENGTH(TRIM(bio)), 0) < 30
 );
 
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 3 · Borrar conexiones de perfiles inválidos
+-- ----------------------------------------------------------------------------
 DELETE FROM connections
-WHERE from_profile_id IN (
-  SELECT id FROM profiles
+WHERE from_profile_id::text IN (
+  SELECT id::text FROM profiles
   WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz',
                                    'loco','prueba','test','testing','asdf','qwer',
                                    'pepe lopez','amazon undertaker')
      OR LENGTH(TRIM(full_name)) < 3
      OR COALESCE(LENGTH(TRIM(bio)), 0) < 30
-) OR to_profile_id IN (
-  SELECT id FROM profiles
+)
+OR to_profile_id::text IN (
+  SELECT id::text FROM profiles
   WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz',
                                    'loco','prueba','test','testing','asdf','qwer',
                                    'pepe lopez','amazon undertaker')
@@ -31,7 +65,24 @@ WHERE from_profile_id IN (
      OR COALESCE(LENGTH(TRIM(bio)), 0) < 30
 );
 
--- 2) Borrar perfiles inválidos
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 4 · Borrar paywall_events huérfanos (si existe la tabla)
+-- ----------------------------------------------------------------------------
+DELETE FROM paywall_events
+WHERE profile_id::text IN (
+  SELECT id::text FROM profiles
+  WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz',
+                                   'loco','prueba','test','testing','asdf','qwer',
+                                   'pepe lopez','amazon undertaker')
+     OR LENGTH(TRIM(full_name)) < 3
+     OR COALESCE(LENGTH(TRIM(bio)), 0) < 30
+);
+
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 5 · Borrar los perfiles inválidos
+-- ----------------------------------------------------------------------------
 DELETE FROM profiles
 WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz',
                                  'loco','prueba','test','testing','asdf','qwer',
@@ -39,25 +90,37 @@ WHERE LOWER(TRIM(full_name)) IN ('aa','aaa','aaaa','hh','dd','ff','gg','xx','zz'
    OR LENGTH(TRIM(full_name)) < 3
    OR COALESCE(LENGTH(TRIM(bio)), 0) < 30;
 
--- 3) Eliminar duplicados (misma combinación user_id+full_name) conservando el más reciente
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 6 · Eliminar duplicados (mismo user_id, conserva el más reciente)
+-- ----------------------------------------------------------------------------
 DELETE FROM profiles a
 USING profiles b
 WHERE a.user_id IS NOT NULL
   AND a.user_id = b.user_id
   AND a.created_at < b.created_at;
 
--- 4) Añadir constraints server-side para prevenir inserciones inválidas
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 7 · Constraints server-side (previene futuros perfiles inválidos)
+-- ----------------------------------------------------------------------------
 ALTER TABLE profiles
-  DROP CONSTRAINT IF EXISTS profiles_name_min_len,
+  DROP CONSTRAINT IF EXISTS profiles_name_min_len;
+ALTER TABLE profiles
   DROP CONSTRAINT IF EXISTS profiles_bio_min_len;
 
 ALTER TABLE profiles
   ADD CONSTRAINT profiles_name_min_len
-    CHECK (LENGTH(TRIM(full_name)) >= 3),
+    CHECK (LENGTH(TRIM(full_name)) >= 3);
+ALTER TABLE profiles
   ADD CONSTRAINT profiles_bio_min_len
     CHECK (LENGTH(TRIM(COALESCE(bio, ''))) >= 30);
 
--- 5) Tabla de reportes (para moderación ligera)
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 8 · Tabla de reportes (para moderación ligera)
+-- Si profiles.id es text en lugar de uuid, cambia UUID por TEXT en reporter_id/reported_id
+-- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS profile_reports (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   reporter_id  UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -81,7 +144,10 @@ CREATE POLICY "own reports insert" ON profile_reports
     SELECT user_id FROM profiles WHERE id = reporter_id
   ));
 
--- 6) Tabla de bloqueos
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE 9 · Tabla de bloqueos
+-- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS profile_blocks (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   blocker_id    UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
