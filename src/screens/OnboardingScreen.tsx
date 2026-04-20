@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { FounderType } from '../data/mockProfiles'
 import { fetchGitHubData, GitHubData } from '../lib/github'
+import { useAuth } from '../hooks/useAuth'
 
 const TYPES: { value: FounderType; label: string; desc: string; color: string }[] = [
   { value: 'Hacker',  label: 'Hacker',  desc: 'Dev, diseño, producto',    color: 'border-blue-400 bg-blue-50' },
@@ -16,10 +17,19 @@ interface Props {
   userId: string | null
   isGithubRedirect?: boolean
   onComplete: (profileId: string | null, founderType: FounderType | null) => void
+  onBackToLogin?: () => void
 }
 
-export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props) {
+export function OnboardingScreen({ userId, isGithubRedirect, onComplete, onBackToLogin }: Props) {
   const isGuest = !userId
+  const { signOut } = useAuth()
+
+  const handleExit = async () => {
+    if (!isGuest) {
+      await signOut()
+    }
+    onBackToLogin?.()
+  }
 
   const [fullName,      setFullName]      = useState('')
   const [founderType,   setFounderType]   = useState<FounderType | null>(null)
@@ -131,7 +141,16 @@ export function OnboardingScreen({ userId, isGithubRedirect, onComplete }: Props
       <div className="w-full max-w-md">
 
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 relative">
+          {onBackToLogin && (
+            <button
+              type="button"
+              onClick={handleExit}
+              className="absolute left-0 top-0 text-sm text-zinc-400 hover:text-zinc-700 transition-colors"
+            >
+              ← Volver
+            </button>
+          )}
           <h1 className="text-3xl font-black text-zinc-900 tracking-tight mb-1">equity</h1>
           <p className="text-zinc-500 text-sm">Cuéntanos quién eres · menos de 1 minuto</p>
         </div>

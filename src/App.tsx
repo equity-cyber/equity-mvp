@@ -98,6 +98,12 @@ export default function App() {
         setMyFounderType(founderType)
         setScreen('feed')
       }}
+      onBackToLogin={() => {
+        setGuest(false)
+        setMyProfileId(null)
+        setMyFounderType(null)
+        setScreen('login')
+      }}
     />
   )
 
