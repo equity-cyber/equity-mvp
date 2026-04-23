@@ -21,6 +21,14 @@ interface DaySection {
 // Free plan: up to 5 distinct chat conversations (unlimited messages within each)
 const FREE_CHAT_LIMIT = 5
 
+// Stripe price IDs desde env vars (cambian entre Test y Live sin tocar código)
+// Fallback a los IDs Test para que nada se rompa si la var no está seteada en dev local
+const env = import.meta.env
+const PRICE_SINGLE  = env.VITE_STRIPE_PRICE_SINGLE  || 'price_1TMOBHU8xknUjRYeCsgbwze'
+const PRICE_PACK3   = env.VITE_STRIPE_PRICE_PACK3   || 'price_1TMBOrHU8xknUjRYb97ATzmD'
+const PRICE_MONTHLY = env.VITE_STRIPE_PRICE_MONTHLY || 'price_1TMBPTHU8xknUjRYUNwtvgTm'
+const PRICE_YEARLY  = env.VITE_STRIPE_PRICE_YEARLY  || 'price_1TMBQCHU8xknUjRYcA3FnSYQ'
+
 const PLANS = [
   {
     id: 'single',
@@ -29,7 +37,7 @@ const PLANS = [
     priceNote: 'pago único',
     desc: 'Desbloquea el chat con este co-founder',
     bullet: '✓ Chat ilimitado con 1 persona',
-    priceId: 'price_1TMOBHU8xknUjRYeCsgbwze',
+    priceId: PRICE_SINGLE,
   },
   {
     id: 'pack3',
@@ -38,7 +46,7 @@ const PLANS = [
     priceNote: '4,33€ por match',
     desc: 'Conecta con tus 3 mejores matches',
     bullet: '✓ Chat ilimitado con 3 personas',
-    priceId: 'price_1TMBOrHU8xknUjRYb97ATzmD',
+    priceId: PRICE_PACK3,
     popular: true,
   },
   {
@@ -48,7 +56,7 @@ const PLANS = [
     priceNote: '/mes · cancela cuando quieras',
     desc: 'Para fundadores que buscan activamente',
     bullet: '✓ Chat ilimitado con todos · Prioridad en el feed',
-    priceId: 'price_1TMBPTHU8xknUjRYUNwtvgTm',
+    priceId: PRICE_MONTHLY,
   },
   {
     id: 'yearly',
@@ -57,13 +65,15 @@ const PLANS = [
     priceNote: '/año — 12,42€/mes',
     desc: 'El mejor precio para encontrar a tu co-founder',
     bullet: '✓ Todo ilimitado · 2 meses gratis',
-    priceId: 'price_1TMBQCHU8xknUjRYcA3FnSYQ',
+    priceId: PRICE_YEARLY,
     savings: 'Ahorra 55€',
   },
 ]
 
-const SUPABASE_FUNCTION_URL = 'https://eocfuhidteqlatkxhrac.supabase.co/functions/v1/clever-handler'
-const SUPABASE_ANON_KEY = 'sb_publishable_NOfzEoKGisEUEOAwSMbRMA_O2Gdjb8d'
+// Edge Function URL + anon key — también desde env (reutiliza VITE_SUPABASE_*)
+const SUPABASE_FUNCTION_URL = env.VITE_SUPABASE_FUNCTION_URL
+  || `${env.VITE_SUPABASE_URL}/functions/v1/clever-handler`
+const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY as string
 
 async function logPaywallEvent(profileId: string | null, event: string, metadata?: Record<string, any>) {
   if (!profileId) return
